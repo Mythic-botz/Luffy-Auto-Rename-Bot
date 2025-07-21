@@ -19,7 +19,7 @@ class Config(object):
     START_VID = os.environ.get("START_VID", "https://ar-hosting.pages.dev/1753073198465.mp4")
 
     START_PIC   = os.environ.get("START_PIC", "https://graph.org/file/2ee7479c14e9a5631c51c-af02092ed32ee3d1ef.jpg")
-    ADMIN       = [int(admin) if id_pattern.search(admin) else admin for admin in os.environ.get('ADMIN', '6497757690').split()]
+    ADMIN       = [int(admin) if id_pattern.search(admin) else admin for admin in os.environ.get('ADMIN', '6617544956').split()]
     FORCE_SUB_CHANNELS = os.environ.get('FORCE_SUB_CHANNELS', 'MythicBots').split(',')
     LOG_CHANNEL = int(os.environ.get("LOG_CHANNEL", "-1002475576837"))
     DUMP_CHANNEL = int(os.environ.get("DUMP_CHANNEL", "-1002876112974"))
