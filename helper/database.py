@@ -202,7 +202,7 @@ class Database:
             logging.error(f"Error getting rename count for user {user_id}: {e}")
             return 0
 
-    async def get_top_users(self, limit=10):
+    async def get_top_renamers(self, limit=10):
         try:
             cursor = self.col.find({"rename_count": {"$gt": 0}}).sort("rename_count", -1).limit(limit)
             return await cursor.to_list(length=limit)
