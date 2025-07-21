@@ -49,12 +49,14 @@ async def start(client, message: Message):
         caption=Txt.START_TXT.format(user.mention),
         reply_markup=buttons
     )
+
 elif Config.START_PIC:
     await message.reply_photo(
         Config.START_PIC,
         caption=Txt.START_TXT.format(user.mention),
         reply_markup=buttons
     )
+
 else:
     await message.reply_text(
         text=Txt.START_TXT.format(user.mention),
