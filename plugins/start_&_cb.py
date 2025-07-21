@@ -25,7 +25,7 @@ async def start(client, message: Message):
     await m.delete()
 
     # Send sticker after the text sequence
-    await message.reply_sticker("CAACAgUAAyEFAASNKMWdAAIcOmh90bKpm85UFah6UoxonvI9ZRBGAAJBFwACATHxV2SoOLSt6JSmHgQ")
+    await message.reply_sticker("CAACAgIAAyEFAASNKMWdAAIcQGh95vLDmk8-OKWUxxb33wAB-FuQTwACUzIAAl2WGUjH7ClEYsoarh4E")
 
     # Define buttons for the start message
     buttons = InlineKeyboardMarkup([
