@@ -70,7 +70,7 @@ class Bot(Client):
         InlineKeyboardButton("CHECK BOT •", url="https://t.me/NexusRenameBot")
     ]
 ])
-
+                )
             except Exception as e:
                 print(f"Failed to send message in chat {chat_id}: {e}")
 
