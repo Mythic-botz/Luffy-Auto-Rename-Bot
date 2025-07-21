@@ -42,23 +42,23 @@ async def start(client, message: Message):
         ]
     ])
 
-    # Send start message with or without Video & picture
+    # Send start message with or without video/photo/text
     if Config.START_VID:
-    await message.reply_video(
+        await message.reply_video(
         Config.START_VID,
         caption=Txt.START_TXT.format(user.mention),
         reply_markup=buttons
     )
 
     elif Config.START_PIC:
-    await message.reply_photo(
+        await message.reply_photo(
         Config.START_PIC,
         caption=Txt.START_TXT.format(user.mention),
         reply_markup=buttons
     )
 
     else:
-    await message.reply_text(
+        await message.reply_text(
         text=Txt.START_TXT.format(user.mention),
         reply_markup=buttons,
         disable_web_page_preview=True
