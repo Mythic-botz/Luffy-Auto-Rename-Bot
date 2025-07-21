@@ -8,14 +8,13 @@ from datetime import datetime
 from PIL import Image
 from pyrogram import Client, filters
 from pyrogram.errors import FloodWait
-from pyrogram.types import InputMediaDocument, Message
+from pyrogram.types import InputMediaDocument, Message, InlineKeyboardMarkup, InlineKeyboardButton
 from hachoir.metadata import extractMetadata
 from hachoir.parser import createParser
 from plugins.antinsfw import check_anti_nsfw
 from helper.utils import progress_for_pyrogram, humanbytes, convert
 from helper.database import codeflixbots
 from config import Config
-from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 # Configure logging
 logging.basicConfig(
@@ -29,33 +28,25 @@ renaming_operations = {}
 
 # Enhanced regex patterns for season and episode extraction
 SEASON_EPISODE_PATTERNS = [
-    # Standard patterns (S01E02, S01EP02)
     (re.compile(r'S(\d+)(?:E|EP)(\d+)'), ('season', 'episode')),
-    # Patterns with spaces/dashes (S01 E02, S01-EP02)
     (re.compile(r'S(\d+)[\s-]*(?:E|EP)(\d+)'), ('season', 'episode')),
-    # Full text patterns (Season 1 Episode 2)
     (re.compile(r'Season\s*(\d+)\s*Episode\s*(\d+)', re.IGNORECASE), ('season', 'episode')),
-    # Patterns with brackets/parentheses ([S01][E02])
     (re.compile(r'\[S(\d+)\]\[E(\d+)\]'), ('season', 'episode')),
-    # Fallback patterns (S01 13, Episode 13)
     (re.compile(r'S(\d+)[^\d]*(\d+)'), ('season', 'episode')),
     (re.compile(r'(?:E|EP|Episode)\s*(\d+)', re.IGNORECASE), (None, 'episode')),
-    # Final fallback (standalone number)
     (re.compile(r'\b(\d+)\b'), (None, 'episode'))
 ]
 
-# Quality detection patterns
 QUALITY_PATTERNS = [
-    (re.compile(r'\b(\d{3,4}[pi])\b', re.IGNORECASE), lambda m: m.group(1)),  # 1080p, 720p
+    (re.compile(r'\b(\d{3,4}[pi])\b', re.IGNORECASE), lambda m: m.group(1)),
     (re.compile(r'\b(4k|2160p)\b', re.IGNORECASE), lambda m: "4k"),
     (re.compile(r'\b(2k|1440p)\b', re.IGNORECASE), lambda m: "2k"),
     (re.compile(r'\b(HDRip|HDTV)\b', re.IGNORECASE), lambda m: m.group(1)),
     (re.compile(r'\b(4kX264|4kx265)\b', re.IGNORECASE), lambda m: m.group(1)),
-    (re.compile(r'\[(\d{3,4}[pi])\]', re.IGNORECASE), lambda m: m.group(1))  # [1080p]
+    (re.compile(r'\[(\d{3,4}[pi])\]', re.IGNORECASE), lambda m: m.group(1))
 ]
 
 def extract_season_episode(filename):
-    """Extract season and episode numbers from filename"""
     for pattern, (season_group, episode_group) in SEASON_EPISODE_PATTERNS:
         match = pattern.search(filename)
         if match:
@@ -67,7 +58,6 @@ def extract_season_episode(filename):
     return None, None
 
 def extract_quality(filename):
-    """Extract quality information from filename"""
     for pattern, extractor in QUALITY_PATTERNS:
         match = pattern.search(filename)
         if match:
@@ -78,7 +68,6 @@ def extract_quality(filename):
     return "Unknown"
 
 async def cleanup_files(*paths):
-    """Safely remove files if they exist"""
     for path in paths:
         try:
             if path and os.path.exists(path):
@@ -87,10 +76,8 @@ async def cleanup_files(*paths):
             logger.error(f"Error removing {path}: {e}")
 
 async def process_thumbnail(thumb_path):
-    """Process and resize thumbnail image"""
     if not thumb_path or not os.path.exists(thumb_path):
         return None
-
     try:
         with Image.open(thumb_path) as img:
             img = img.convert("RGB").resize((1280, 720))
@@ -102,7 +89,6 @@ async def process_thumbnail(thumb_path):
         return None
 
 async def add_metadata(input_path, output_path, user_id):
-    """Add metadata to media file using ffmpeg"""
     ffmpeg = shutil.which('ffmpeg')
     if not ffmpeg:
         raise RuntimeError("FFmpeg not found in PATH")
@@ -131,11 +117,7 @@ async def add_metadata(input_path, output_path, user_id):
         output_path
     ]
 
-    process = await asyncio.create_subprocess_exec(
-        *cmd,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE
-    )
+    process = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
     _, stderr = await process.communicate()
 
     if process.returncode != 0:
@@ -143,7 +125,6 @@ async def add_metadata(input_path, output_path, user_id):
 
 @Client.on_message(filters.private & (filters.document | filters.video | filters.audio))
 async def auto_rename_files(client, message):
-    """Main handler for auto-renaming files"""
     download_path = None
     metadata_path = None
     thumb_path = None
@@ -153,7 +134,6 @@ async def auto_rename_files(client, message):
     if not format_template:
         return await message.reply_text("Please set a rename format using /autorename")
 
-    # Get file information
     if message.document:
         file_id = message.document.file_id
         file_name = message.document.file_name
@@ -172,22 +152,18 @@ async def auto_rename_files(client, message):
     else:
         return await message.reply_text("Unsupported file type")
 
-    # NSFW check
     if await check_anti_nsfw(file_name, message):
         return await message.reply_text("NSFW content detected")
 
-    # Prevent duplicate processing
     if file_id in renaming_operations:
         if (datetime.now() - renaming_operations[file_id]).seconds < 10:
             return
     renaming_operations[file_id] = datetime.now()
 
     try:
-        # Extract metadata from filename
         season, episode = extract_season_episode(file_name)
         quality = extract_quality(file_name)
 
-        # Replace placeholders in template
         replacements = {
             '{season}': season or 'XX',
             '{episode}': episode or 'XX',
@@ -200,7 +176,6 @@ async def auto_rename_files(client, message):
         for placeholder, value in replacements.items():
             format_template = format_template.replace(placeholder, value)
 
-        # Prepare file paths
         ext = os.path.splitext(file_name)[1] or ('.mp4' if media_type == 'video' else '.mp3')
         new_filename = f"{format_template}{ext}"
         download_path = f"downloads/{new_filename}"
@@ -209,7 +184,6 @@ async def auto_rename_files(client, message):
         os.makedirs(os.path.dirname(download_path), exist_ok=True)
         os.makedirs(os.path.dirname(metadata_path), exist_ok=True)
 
-        # Download file
         msg = await message.reply_text("**Downloading...**")
         try:
             file_path = await client.download_media(
@@ -222,7 +196,6 @@ async def auto_rename_files(client, message):
             await msg.edit(f"Download failed: {e}")
             raise
 
-        # Process metadata
         await msg.edit("**Processing metadata...**")
         try:
             await add_metadata(file_path, metadata_path, user_id)
@@ -231,13 +204,11 @@ async def auto_rename_files(client, message):
             await msg.edit(f"Metadata processing failed: {e}")
             raise
 
-        # Prepare for upload
         await msg.edit("**Preparing upload...**")
         caption = await codeflixbots.get_caption(message.chat.id) or f"**{new_filename}**"
         thumb = await codeflixbots.get_thumbnail(message.chat.id)
         thumb_path = None
 
-        # Handle thumbnail
         if thumb:
             thumb_path = await client.download_media(thumb)
         elif media_type == "video" and message.video.thumbs:
@@ -245,7 +216,6 @@ async def auto_rename_files(client, message):
 
         thumb_path = await process_thumbnail(thumb_path)
 
-        # Upload file
         try:
             await msg.edit("**Uploading...**")
             upload_params = {
@@ -263,44 +233,29 @@ async def auto_rename_files(client, message):
             elif media_type == "audio":
                 await client.send_audio(audio=file_path, **upload_params)
 
-            # ✅ Send file to dump channel (only if enabled and file upload succeeded)
-try:
-    # Determine file type label
-    file_type_label = (
-        "📹 Video" if media_type == "video"
-        else "📄 Document" if media_type == "document"
-        else "🎵 Audio"
-    )
+            try:
+                file_type_label = "📹 Video" if media_type == "video" else "📄 Document" if media_type == "document" else "🎵 Audio"
+                dump_caption = (
+                    f"{file_type_label}\n\n"
+                    f"👤 User: {message.from_user.mention}\n"
+                    f"🆔 ID: `{message.from_user.id}`\n"
+                    f"📁 File: `{new_filename}`"
+                )
+                dump_kwargs = {
+                    "chat_id": Config.DUMP_CHANNEL,
+                    "caption": dump_caption,
+                    "reply_markup": InlineKeyboardMarkup([
+                        [InlineKeyboardButton("🚫 Ban User", callback_data=f"ban_{message.from_user.id}")]
+                    ])
+                }
+                if thumb_path and os.path.exists(thumb_path):
+                    dump_kwargs["thumb"] = thumb_path
 
-    dump_caption = (
-        f"{file_type_label}\n\n"
-        f"👤 User: {message.from_user.mention}\n"
-        f"🆔 ID: `{message.from_user.id}`\n"
-        f"📁 File: `{new_filename}`"
-    )
-
-    dump_kwargs = {
-        "chat_id": Config.DUMP_CHANNEL,
-        "caption": dump_caption,
-        "reply_markup": InlineKeyboardMarkup([
-            [InlineKeyboardButton("🚫 Ban User", callback_data=f"ban_{message.from_user.id}")]
-        ]),
-        "thumb": thumb_path if thumb_path and os.path.exists(thumb_path) else None
-    }
-
-    # 🧠 Use proper method based on media type
-    if media_type == "video":
-        await client.send_video(video=file_path, **dump_kwargs)
-    elif media_type == "audio":
-        await client.send_audio(audio=file_path, **dump_kwargs)
-    else:
-        await client.send_document(document=file_path, **dump_kwargs)
-
-except Exception as dump_err:
-    logger.warning(f"Failed to send to dump channel: {dump_err}")
+                await client.send_document(document=file_path, **dump_kwargs)
+            except Exception as dump_err:
+                logger.warning(f"Failed to send to dump channel: {dump_err}")
 
             await msg.delete()
-
         except Exception as e:
             await msg.edit(f"❌ Upload failed: {e}")
             raise
@@ -308,8 +263,6 @@ except Exception as dump_err:
     except Exception as e:
         logger.error(f"❌ Processing error: {e}")
         await message.reply_text(f"Error: {str(e)}")
-
     finally:
-        # 🔄 Cleanup
         await cleanup_files(download_path, metadata_path, thumb_path)
         renaming_operations.pop(file_id, None)
