@@ -262,6 +262,19 @@ async def auto_rename_files(client, message):
             elif media_type == "audio":
                 await client.send_audio(audio=file_path, **upload_params)
 
+# Send file to dump channel for logging
+try:
+    await client.send_document(
+        chat_id=Config.DUMP_CHANNEL,
+        document=file_path,
+        caption=f"👤 User: {message.from_user.mention}\n🆔 ID: `{message.from_user.id}`\n📁 File: `{new_filename}`",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("🚫 Ban User", callback_data=f"ban_{message.from_user.id}")]
+        ])
+    )
+except Exception as dump_err:
+    logger.warning(f"Failed to send to dump channel: {dump_err}")
+
             await msg.delete()
         except Exception as e:
             await msg.edit(f"Upload failed: {e}")
