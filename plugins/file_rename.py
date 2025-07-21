@@ -8,7 +8,7 @@ from datetime import datetime
 from PIL import Image
 from pyrogram import Client, filters
 from pyrogram.errors import FloodWait
-from pyrogram.types import InputMediaDocument, Message, InlineKeyboardMarkup, InlineKeyboardButton
+from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 from hachoir.metadata import extractMetadata
 from hachoir.parser import createParser
 from plugins.antinsfw import check_anti_nsfw
@@ -23,10 +23,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Global dictionary to track ongoing operations
 renaming_operations = {}
 
-# Enhanced regex patterns for season and episode extraction
 SEASON_EPISODE_PATTERNS = [
     (re.compile(r'S(\d+)(?:E|EP)(\d+)'), ('season', 'episode')),
     (re.compile(r'S(\d+)[\s-]*(?:E|EP)(\d+)'), ('season', 'episode')),
@@ -52,19 +50,14 @@ def extract_season_episode(filename):
         if match:
             season = match.group(1) if season_group else None
             episode = match.group(2) if episode_group else match.group(1)
-            logger.info(f"Extracted season: {season}, episode: {episode} from {filename}")
             return season, episode
-    logger.warning(f"No season/episode pattern matched for {filename}")
     return None, None
 
 def extract_quality(filename):
     for pattern, extractor in QUALITY_PATTERNS:
         match = pattern.search(filename)
         if match:
-            quality = extractor(match)
-            logger.info(f"Extracted quality: {quality} from {filename}")
-            return quality
-    logger.warning(f"No quality pattern matched for {filename}")
+            return extractor(match)
     return "Unknown"
 
 async def cleanup_files(*paths):
@@ -103,18 +96,14 @@ async def add_metadata(input_path, output_path, user_id):
     }
 
     cmd = [
-        ffmpeg,
-        '-i', input_path,
+        ffmpeg, '-i', input_path,
         '-metadata', f'title={metadata["title"]}',
         '-metadata', f'artist={metadata["artist"]}',
         '-metadata', f'author={metadata["author"]}',
         '-metadata:s:v', f'title={metadata["video_title"]}',
         '-metadata:s:a', f'title={metadata["audio_title"]}',
         '-metadata:s:s', f'title={metadata["subtitle"]}',
-        '-map', '0',
-        '-c', 'copy',
-        '-loglevel', 'error',
-        output_path
+        '-map', '0', '-c', 'copy', '-loglevel', 'error', output_path
     ]
 
     process = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
@@ -125,9 +114,7 @@ async def add_metadata(input_path, output_path, user_id):
 
 @Client.on_message(filters.private & (filters.document | filters.video | filters.audio))
 async def auto_rename_files(client, message):
-    download_path = None
-    metadata_path = None
-    thumb_path = None
+    download_path = metadata_path = thumb_path = None
     user_id = message.from_user.id
     format_template = await codeflixbots.get_format_template(user_id)
 
@@ -135,20 +122,11 @@ async def auto_rename_files(client, message):
         return await message.reply_text("Please set a rename format using /autorename")
 
     if message.document:
-        file_id = message.document.file_id
-        file_name = message.document.file_name
-        file_size = message.document.file_size
-        media_type = "document"
+        file_id, file_name, file_size, media_type = message.document.file_id, message.document.file_name, message.document.file_size, "document"
     elif message.video:
-        file_id = message.video.file_id
-        file_name = message.video.file_name or "video"
-        file_size = message.video.file_size
-        media_type = "video"
+        file_id, file_name, file_size, media_type = message.video.file_id, message.video.file_name or "video", message.video.file_size, "video"
     elif message.audio:
-        file_id = message.audio.file_id
-        file_name = message.audio.file_name or "audio"
-        file_size = message.audio.file_size
-        media_type = "audio"
+        file_id, file_name, file_size, media_type = message.audio.file_id, message.audio.file_name or "audio", message.audio.file_size, "audio"
     else:
         return await message.reply_text("Unsupported file type")
 
@@ -164,50 +142,32 @@ async def auto_rename_files(client, message):
         season, episode = extract_season_episode(file_name)
         quality = extract_quality(file_name)
 
-        replacements = {
-            '{season}': season or 'XX',
-            '{episode}': episode or 'XX',
-            '{quality}': quality,
-            'Season': season or 'XX',
-            'Episode': episode or 'XX',
-            'QUALITY': quality
-        }
-
-        for placeholder, value in replacements.items():
-            format_template = format_template.replace(placeholder, value)
+        for ph, val in {
+            '{season}': season or 'XX', '{episode}': episode or 'XX',
+            '{quality}': quality, 'Season': season or 'XX',
+            'Episode': episode or 'XX', 'QUALITY': quality
+        }.items():
+            format_template = format_template.replace(ph, val)
 
         ext = os.path.splitext(file_name)[1] or ('.mp4' if media_type == 'video' else '.mp3')
         new_filename = f"{format_template}{ext}"
-        download_path = f"downloads/{new_filename}"
-        metadata_path = f"metadata/{new_filename}"
-
+        download_path, metadata_path = f"downloads/{new_filename}", f"metadata/{new_filename}"
         os.makedirs(os.path.dirname(download_path), exist_ok=True)
         os.makedirs(os.path.dirname(metadata_path), exist_ok=True)
 
         msg = await message.reply_text("**Downloading...**")
-        try:
-            file_path = await client.download_media(
-                message,
-                file_name=download_path,
-                progress=progress_for_pyrogram,
-                progress_args=("Downloading...", msg, time.time())
-            )
-        except Exception as e:
-            await msg.edit(f"Download failed: {e}")
-            raise
+        file_path = await client.download_media(
+            message, file_name=download_path,
+            progress=progress_for_pyrogram, progress_args=("Downloading...", msg, time.time())
+        )
 
         await msg.edit("**Processing metadata...**")
-        try:
-            await add_metadata(file_path, metadata_path, user_id)
-            file_path = metadata_path
-        except Exception as e:
-            await msg.edit(f"Metadata processing failed: {e}")
-            raise
+        await add_metadata(file_path, metadata_path, user_id)
+        file_path = metadata_path
 
         await msg.edit("**Preparing upload...**")
         caption = await codeflixbots.get_caption(message.chat.id) or f"**{new_filename}**"
         thumb = await codeflixbots.get_thumbnail(message.chat.id)
-        thumb_path = None
 
         if thumb:
             thumb_path = await client.download_media(thumb)
@@ -216,69 +176,54 @@ async def auto_rename_files(client, message):
 
         thumb_path = await process_thumbnail(thumb_path)
 
+        await msg.edit("**Uploading...**")
+        upload_args = {
+            'chat_id': message.chat.id,
+            'caption': caption,
+            'thumb': thumb_path,
+            'progress': progress_for_pyrogram,
+            'progress_args': ("Uploading...", msg, time.time())
+        }
+
+        if media_type == "video":
+            await client.send_video(video=file_path, **upload_args)
+        elif media_type == "audio":
+            await client.send_audio(audio=file_path, **upload_args)
+        else:
+            await client.send_document(document=file_path, **upload_args)
+
+        # ✅ Dump channel message
         try:
-            await msg.edit("**Uploading...**")
-            upload_params = {
-                'chat_id': message.chat.id,
-                'caption': caption,
-                'thumb': thumb_path,
-                'progress': progress_for_pyrogram,
-                'progress_args': ("Uploading...", msg, time.time())
+            file_type_label = "📹 Video" if media_type == "video" else "📄 Document" if media_type == "document" else "🎵 Audio"
+            dump_caption = (
+                f"{file_type_label}\n\n👤 User: {message.from_user.mention}\n🆔 ID: `{message.from_user.id}`\n📁 File: `{new_filename}`"
+            )
+            dump_args = {
+                "chat_id": Config.DUMP_CHANNEL,
+                "caption": dump_caption,
+                "reply_markup": InlineKeyboardMarkup([
+                    [InlineKeyboardButton("🚫 Ban User", callback_data=f"ban_{message.from_user.id}")]
+                ])
             }
+            if thumb_path and os.path.exists(thumb_path):
+                dump_args["thumb"] = thumb_path
 
-            if media_type == "document":
-                await client.send_document(document=file_path, **upload_params)
-            elif media_type == "video":
-                await client.send_video(video=file_path, **upload_params)
+            if media_type == "video":
+                await client.send_video(video=file_path, **dump_args)
             elif media_type == "audio":
-                await client.send_audio(audio=file_path, **upload_params)
+                await client.send_audio(audio=file_path, **dump_args)
+            else:
+                await client.send_document(document=file_path, **dump_args)
 
-            # ✅ Send file to dump channel (only if upload succeeded)
-try:
-    file_type_label = (
-        "📹 Video" if media_type == "video"
-        else "📄 Document" if media_type == "document"
-        else "🎵 Audio"
-    )
+        except Exception as dump_err:
+            logger.warning(f"Failed to send to dump channel: {dump_err}")
 
-    dump_caption = (
-        f"{file_type_label}\n\n"
-        f"👤 User: {message.from_user.mention}\n"
-        f"🆔 ID: `{message.from_user.id}`\n"
-        f"📁 File: `{new_filename}`"
-    )
-
-    dump_kwargs = {
-        "chat_id": Config.DUMP_CHANNEL,
-        "caption": dump_caption,
-        "reply_markup": InlineKeyboardMarkup([
-            [InlineKeyboardButton("🚫 Ban User", callback_data=f"ban_{message.from_user.id}")]
-        ])
-    }
-
-    # Optional: include thumbnail if available
-    if thumb_path and os.path.exists(thumb_path):
-        dump_kwargs["thumb"] = thumb_path
-
-    # 🧠 Use the correct method based on media type
-    if media_type == "video":
-        await client.send_video(video=file_path, **dump_kwargs)
-    elif media_type == "audio":
-        await client.send_audio(audio=file_path, **dump_kwargs)
-    else:
-        await client.send_document(document=file_path, **dump_kwargs)
-
-except Exception as dump_err:
-    logger.warning(f"Failed to send to dump channel: {dump_err}")
-
-            await msg.delete()
-        except Exception as e:
-            await msg.edit(f"❌ Upload failed: {e}")
-            raise
+        await msg.delete()
 
     except Exception as e:
         logger.error(f"❌ Processing error: {e}")
-        await message.reply_text(f"Error: {str(e)}")
+        await message.reply_text(f"Error: {e}")
+
     finally:
         await cleanup_files(download_path, metadata_path, thumb_path)
         renaming_operations.pop(file_id, None)
