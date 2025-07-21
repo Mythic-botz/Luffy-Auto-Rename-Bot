@@ -64,12 +64,12 @@ class Bot(Client):
                         "**ʟᴜғғʏ ɪs ʀᴇsᴛᴀʀᴛᴇᴅ ᴀɢᴀɪɴ  !**\n\n"
                         f"ɪ ᴅɪᴅɴ'ᴛ sʟᴇᴘᴛ sɪɴᴄᴇ​: `{uptime_string}`"
                     ),
-                    reply_markup=InlineKeyboardMarkup(
-                        [[
-                            InlineKeyboardButton("ᴜᴘᴅᴀᴛᴇs", url="https://t.me/+vOOhnbTuEbFjZmJl")
-                        ]]
-                    )
-                )
+                    reply_markup=InlineKeyboardMarkup([
+    [
+        InlineKeyboardButton("• UPDATES •", url="https://t.me/+vOOhnbTuEbFjZmJ1"),
+        InlineKeyboardButton("CHECK BOT •", url="https://t.me/YourBotUsername")
+    ]
+])
 
             except Exception as e:
                 print(f"Failed to send message in chat {chat_id}: {e}")
