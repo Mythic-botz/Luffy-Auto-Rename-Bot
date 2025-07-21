@@ -61,7 +61,7 @@ class Bot(Client):
                     chat_id=chat_id,
                     video=Config.START_VID,
                     caption=(
-                        "**ɴᴀʀᴜᴛᴏ ɪs ʀᴇsᴛᴀʀᴛᴇᴅ ᴀɢᴀɪɴ  !**\n\n"
+                        "**ʟᴜғғʏ ɪs ʀᴇsᴛᴀʀᴛᴇᴅ ᴀɢᴀɪɴ  !**\n\n"
                         f"ɪ ᴅɪᴅɴ'ᴛ sʟᴇᴘᴛ sɪɴᴄᴇ​: `{uptime_string}`"
                     ),
                     reply_markup=InlineKeyboardMarkup(
