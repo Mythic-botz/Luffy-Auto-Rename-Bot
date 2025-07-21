@@ -192,6 +192,8 @@ async def auto_rename_files(client, message):
         else:
             await client.send_document(document=file_path, **upload_args)
 
+await codeflixbots.increment_rename_count(user_id)
+
         # ✅ Dump channel message
         try:
             file_type_label = "📹 Video" if media_type == "video" else "📄 Document" if media_type == "document" else "🎵 Audio"
