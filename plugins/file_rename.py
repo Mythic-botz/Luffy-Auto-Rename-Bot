@@ -265,14 +265,31 @@ async def auto_rename_files(client, message):
 
             # ✅ Send to dump channel (only if enabled and file upload succeeded)
             try:
-                await client.send_document(
-                    chat_id=Config.DUMP_CHANNEL,
-                    document=file_path,
-                    caption=f"👤 User: {message.from_user.mention}\n🆔 ID: `{message.from_user.id}`\n📁 File: `{new_filename}`",
-                    reply_markup=InlineKeyboardMarkup([
+                # Determine file type label
+                file_type_label = "📹 Video" if media_type == "video" else "📄 Document" if media_type == "document" else "🎵 Audio"
+
+                dump_caption = (
+                    f"{file_type_label}\n\n"
+                    f"👤 User: {message.from_user.mention}\n"
+                    f"🆔 ID: `{message.from_user.id}`\n"
+                    f"📁 File: `{new_filename}`"
+                )
+
+                dump_kwargs = {
+                    "chat_id": Config.DUMP_CHANNEL,
+                    "caption": dump_caption,
+                    "reply_markup": InlineKeyboardMarkup([
                         [InlineKeyboardButton("🚫 Ban User", callback_data=f"ban_{message.from_user.id}")]
                     ])
-                )
+                }
+
+                # Add thumbnail if available
+                if thumb_path and os.path.exists(thumb_path):
+                    dump_kwargs["thumb"] = thumb_path
+
+                # Send file to dump channel
+                await client.send_document(document=file_path, **dump_kwargs)
+
             except Exception as dump_err:
                 logger.warning(f"Failed to send to dump channel: {dump_err}")
 
