@@ -42,27 +42,27 @@ async def start(client, message: Message):
         ]
     ])
 
-    # Send start message with or without video/photo/text
-if Config.START_VID:
-    await message.reply_video(
-        Config.START_VID,
-        caption=Txt.START_TXT.format(user.mention),
-        reply_markup=buttons
-    )
+    # ✅ FIXED: This block is now inside the function
+    if Config.START_VID:
+        await message.reply_video(
+            Config.START_VID,
+            caption=Txt.START_TXT.format(user.mention),
+            reply_markup=buttons
+        )
 
-elif Config.START_PIC:
-    await message.reply_photo(
-        Config.START_PIC,
-        caption=Txt.START_TXT.format(user.mention),
-        reply_markup=buttons
-    )
+    elif Config.START_PIC:
+        await message.reply_photo(
+            Config.START_PIC,
+            caption=Txt.START_TXT.format(user.mention),
+            reply_markup=buttons
+        )
 
-else:
-    await message.reply_text(
-        text=Txt.START_TXT.format(user.mention),
-        reply_markup=buttons,
-        disable_web_page_preview=True
-    )
+    else:
+        await message.reply_text(
+            text=Txt.START_TXT.format(user.mention),
+            reply_markup=buttons,
+            disable_web_page_preview=True
+        )
 
 
 # Callback Query Handler
@@ -105,12 +105,13 @@ async def cb_handler(client, query: CallbackQuery):
         )
 
     elif data == "meta":
-        await query.message.edit_text(  # Change edit_caption to edit_text
-            text=Txt.SEND_METADATA,  # Changed from caption to text
+        await query.message.edit_text(
+            text=Txt.SEND_METADATA,
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("• ᴄʟᴏsᴇ", callback_data="close"), InlineKeyboardButton("ʙᴀᴄᴋ •", callback_data="help")]
             ])
         )
+
     elif data == "donate":
         await query.message.edit_text(
             text=Txt.DONATE_TXT,
@@ -119,6 +120,7 @@ async def cb_handler(client, query: CallbackQuery):
                 [InlineKeyboardButton("• ʙᴀᴄᴋ", callback_data="help"), InlineKeyboardButton("ᴏᴡɴᴇʀ •", url='https://t.me/sewxiy')]
             ])
         )
+
     elif data == "file_names":
         format_template = await codeflixbots.get_format_template(user_id)
         await query.message.edit_text(
@@ -128,6 +130,7 @@ async def cb_handler(client, query: CallbackQuery):
                 [InlineKeyboardButton("• ᴄʟᴏsᴇ", callback_data="close"), InlineKeyboardButton("ʙᴀᴄᴋ •", callback_data="help")]
             ])
         )
+
     elif data == "thumbnail":
         await query.message.edit_caption(
             caption=Txt.THUMBNAIL_TXT,
@@ -135,6 +138,7 @@ async def cb_handler(client, query: CallbackQuery):
                 [InlineKeyboardButton("• ᴄʟᴏsᴇ", callback_data="close"), InlineKeyboardButton("ʙᴀᴄᴋ •", callback_data="help")]
             ])
         )
+
     elif data == "metadatax":
         await query.message.edit_caption(
             caption=Txt.SEND_METADATA,
@@ -142,6 +146,7 @@ async def cb_handler(client, query: CallbackQuery):
                 [InlineKeyboardButton("• ᴄʟᴏsᴇ", callback_data="close"), InlineKeyboardButton("ʙᴀᴄᴋ •", callback_data="help")]
             ])
         )
+
     elif data == "source":
         await query.message.edit_caption(
             caption=Txt.SOURCE_TXT,
@@ -149,6 +154,7 @@ async def cb_handler(client, query: CallbackQuery):
                 [InlineKeyboardButton("• ᴄʟᴏsᴇ", callback_data="close"), InlineKeyboardButton("ʙᴀᴄᴋ •", callback_data="home")]
             ])
         )
+
     elif data == "premiumx":
         await query.message.edit_caption(
             caption=Txt.PREMIUM_TXT,
@@ -156,6 +162,7 @@ async def cb_handler(client, query: CallbackQuery):
                 [InlineKeyboardButton("• ʙᴀᴄᴋ", callback_data="help"), InlineKeyboardButton("ʙᴜʏ ᴘʀᴇᴍɪᴜᴍ •", url='https://t.me/sewxiy')]
             ])
         )
+
     elif data == "plans":
         await query.message.edit_caption(
             caption=Txt.PREPLANS_TXT,
@@ -163,6 +170,7 @@ async def cb_handler(client, query: CallbackQuery):
                 [InlineKeyboardButton("• ᴄʟᴏsᴇ", callback_data="close"), InlineKeyboardButton("ʙᴜʏ ᴘʀᴇᴍɪᴜᴍ •", url='https://t.me/sewxiy')]
             ])
         )
+
     elif data == "about":
         await query.message.edit_text(
             text=Txt.ABOUT_TXT,
@@ -173,6 +181,7 @@ async def cb_handler(client, query: CallbackQuery):
                 [InlineKeyboardButton("• ʙᴀᴄᴋ •", callback_data="home")]
             ])
         )
+
     elif data == "close":
         try:
             await query.message.delete()
@@ -181,73 +190,3 @@ async def cb_handler(client, query: CallbackQuery):
         except:
             await query.message.delete()
             await query.message.continue_propagation()
-
-# Donation Command Handler
-@Client.on_message(filters.command("donate"))
-async def donation(client, message):
-    buttons = InlineKeyboardMarkup([
-        [InlineKeyboardButton(text="ʙᴀᴄᴋ", callback_data="help"), InlineKeyboardButton(text="ᴏᴡɴᴇʀ", url='https://t.me/sewxiy')]
-    ])
-    yt = await message.reply_photo(photo='https://graph.org/file/1919fe077848bd0783d4c.jpg', caption=Txt.DONATE_TXT, reply_markup=buttons)
-    await asyncio.sleep(300)
-    await yt.delete()
-    await message.delete()
-
-# Premium Command Handler
-@Client.on_message(filters.command("premium"))
-async def getpremium(bot, message):
-    buttons = InlineKeyboardMarkup([
-        [InlineKeyboardButton("ᴏᴡɴᴇʀ", url="https://t.me/sewxiy"), InlineKeyboardButton("ᴄʟᴏsᴇ", callback_data="close")]
-    ])
-    yt = await message.reply_photo(photo='https://graph.org/file/feebef43bbdf76e796b1b.jpg', caption=Txt.PREMIUM_TXT, reply_markup=buttons)
-    await asyncio.sleep(300)
-    await yt.delete()
-    await message.delete()
-
-# Plan Command Handler
-@Client.on_message(filters.command("plan"))
-async def premium(bot, message):
-    buttons = InlineKeyboardMarkup([
-        [InlineKeyboardButton("sᴇɴᴅ ss", url="https://t.me/sewxiy"), InlineKeyboardButton("ᴄʟᴏsᴇ", callback_data="close")]
-    ])
-    yt = await message.reply_photo(photo='https://graph.org/file/8b50e21db819f296661b7.jpg', caption=Txt.PREPLANS_TXT, reply_markup=buttons)
-    await asyncio.sleep(300)
-    await yt.delete()
-    await message.delete()
-
-# Bought Command Handler
-@Client.on_message(filters.command("bought") & filters.private)
-async def bought(client, message):
-    msg = await message.reply('Wait im checking...')
-    replied = message.reply_to_message
-
-    if not replied:
-        await msg.edit("<b>Please reply with the screenshot of your payment for the premium purchase to proceed.\n\nFor example, first upload your screenshot, then reply to it using the '/bought' command</b>")
-    elif replied.photo:
-        await client.send_photo(
-            chat_id=LOG_CHANNEL,
-            photo=replied.photo.file_id,
-            caption=f'<b>User - {message.from_user.mention}\nUser id - <code>{message.from_user.id}</code>\nUsername - <code>{message.from_user.username}</code>\nName - <code>{message.from_user.first_name}</code></b>',
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("Close", callback_data="close_data")]
-            ])
-        )
-        await msg.edit_text('<b>Your screenshot has been sent to Admins</b>')
-
-@Client.on_message(filters.private & filters.command("help"))
-async def help_command(client, message):
-    # Await get_me to get the bot's user object
-    bot = await client.get_me()
-    mention = bot.mention
-
-    # Send the help message with inline buttons
-    await message.reply_text(
-        text=Txt.HELP_TXT.format(mention=mention),
-        disable_web_page_preview=True,
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("• ᴀᴜᴛᴏ ʀᴇɴᴀᴍᴇ ғᴏʀᴍᴀᴛ •", callback_data='file_names')],
-            [InlineKeyboardButton('• ᴛʜᴜᴍʙɴᴀɪʟ', callback_data='thumbnail'), InlineKeyboardButton('ᴄᴀᴘᴛɪᴏɴ •', callback_data='caption')],
-            [InlineKeyboardButton('• ᴍᴇᴛᴀᴅᴀᴛᴀ', callback_data='meta'), InlineKeyboardButton('ᴅᴏɴᴀᴛᴇ •', callback_data='donate')],
-            [InlineKeyboardButton('• ʜᴏᴍᴇ', callback_data='home')]
-        ])
-    )
