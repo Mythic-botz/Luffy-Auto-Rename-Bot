@@ -37,14 +37,18 @@ class Database:
     )
 
     async def add_user(self, b, m):
-        u = m.from_user
-        if not await self.is_user_exist(u.id):
-            user = self.new_user(u.id)
-            try:
-                await self.col.insert_one(user)
-                await send_log(b, u)
-            except Exception as e:
-                logging.error(f"Error adding user {u.id}: {e}")
+    u = m.from_user
+    if not await self.is_user_exist(u.id):
+        name = u.first_name
+        if u.last_name:
+            name += f" {u.last_name}"
+        mention = u.mention or f"[User](tg://user?id={u.id})"
+        user = self.new_user(u.id, name, mention)
+        try:
+            await self.col.insert_one(user)
+            await send_log(b, u)
+        except Exception as e:
+            logging.error(f"Error adding user {u.id}: {e}")
 
     async def is_user_exist(self, id):
         try:
