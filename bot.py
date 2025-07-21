@@ -11,6 +11,8 @@ import pyromod
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 import os
 import time
+from plugins import leaderboard  
+
 
 pyrogram.utils.MIN_CHANNEL_ID = -1009147483647
 
