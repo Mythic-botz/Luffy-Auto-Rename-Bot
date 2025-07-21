@@ -66,8 +66,8 @@ class Bot(Client):
                     ),
                     reply_markup=InlineKeyboardMarkup([
     [
-        InlineKeyboardButton("• UPDATES ", url="https://t.me/+rB9N1pKnJ783NWJl"),
-        InlineKeyboardButton("CHECK BOT •", url="https://t.me/NexusRenameBot")
+        InlineKeyboardButton("• ᴜᴘᴅᴀᴛᴇꜱ ", url="https://t.me/+rB9N1pKnJ783NWJl"),
+        InlineKeyboardButton("ᴄʜᴇᴄᴋ ʙᴏᴛ •", url="https://t.me/NexusRenameBot")
     ]
 ])
                 )
