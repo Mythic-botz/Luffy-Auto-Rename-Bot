@@ -1,6 +1,6 @@
 import motor.motor_asyncio, datetime, pytz
 from config import Config
-import logging  # Added for logging errors and important information
+import logging
 from .utils import send_log
 
 
@@ -8,11 +8,11 @@ class Database:
     def __init__(self, uri, database_name):
         try:
             self._client = motor.motor_asyncio.AsyncIOMotorClient(uri)
-            self._client.server_info()  # This will raise an exception if the connection fails
+            self._client.server_info()
             logging.info("Successfully connected to MongoDB")
         except Exception as e:
             logging.error(f"Failed to connect to MongoDB: {e}")
-            raise e  # Re-raise the exception after logging it
+            raise e
         self.codeflixbots = self._client[database_name]
         self.col = self.codeflixbots.user
 
@@ -25,6 +25,7 @@ class Database:
             metadata=True,
             metadata_code="Telegram : @codeflixbots",
             format_template=None,
+            rename_count=0,  # ✅ Rename counter added
             ban_status=dict(
                 is_banned=False,
                 ban_duration=0,
@@ -182,5 +183,33 @@ class Database:
     async def set_video(self, user_id, video):
         await self.col.update_one({'_id': int(user_id)}, {'$set': {'video': video}})
 
+    # ✅ New leaderboard functions below
 
+    async def increment_rename_count(self, user_id):
+        try:
+            await self.col.update_one(
+                {"_id": int(user_id)},
+                {"$inc": {"rename_count": 1}}
+            )
+        except Exception as e:
+            logging.error(f"Error incrementing rename count for user {user_id}: {e}")
+
+    async def get_rename_count(self, user_id):
+        try:
+            user = await self.col.find_one({"_id": int(user_id)})
+            return user.get("rename_count", 0) if user else 0
+        except Exception as e:
+            logging.error(f"Error getting rename count for user {user_id}: {e}")
+            return 0
+
+    async def get_top_users(self, limit=10):
+        try:
+            cursor = self.col.find({"rename_count": {"$gt": 0}}).sort("rename_count", -1).limit(limit)
+            return await cursor.to_list(length=limit)
+        except Exception as e:
+            logging.error(f"Error getting top users: {e}")
+            return []
+
+
+# Instantiate
 codeflixbots = Database(Config.DB_URL, Config.DB_NAME)
