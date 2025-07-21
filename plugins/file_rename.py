@@ -245,44 +245,39 @@ async def auto_rename_files(client, message):
         thumb_path = await process_thumbnail(thumb_path)
 
         # Upload file
-    await msg.edit("**Uploading...**")
-    try:
-        upload_params = {
-            'chat_id': message.chat.id,
-            'caption': caption,
-            'thumb': thumb_path,
-            'progress': progress_for_pyrogram,
-            'progress_args': ("Uploading...", msg, time.time())
-        }
-
-        if media_type == "document":
-            await client.send_document(document=file_path, **upload_params)
-        elif media_type == "video":
-            await client.send_video(video=file_path, **upload_params)
-        elif media_type == "audio":
-            await client.send_audio(audio=file_path, **upload_params)
-
-        # ✅ Send file to dump channel for logging (properly indented inside the function)
         try:
-            await client.send_document(
-                chat_id=Config.DUMP_CHANNEL,
-                document=file_path,
-                caption=f"\U0001f464 User: {message.from_user.mention}\n\U0001f194 ID: `{message.from_user.id}`\n\U0001f4c1 File: `{new_filename}`",
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("\u274c Ban User", callback_data=f"ban_{message.from_user.id}")]
-                ])
-            )
-        except Exception as dump_err:
-            logger.warning(f"Failed to send to dump channel: {dump_err}")
+            await msg.edit("**Uploading...**")
 
-        await msg.delete()
-    except Exception as e:
-        await msg.edit(f"Upload failed: {e}")
-        raise
+            upload_params = {
+                'chat_id': message.chat.id,
+                'caption': caption,
+                'thumb': thumb_path,
+                'progress': progress_for_pyrogram,
+                'progress_args': ("Uploading...", msg, time.time())
+            }
 
+            if media_type == "document":
+                await client.send_document(document=file_path, **upload_params)
+            elif media_type == "video":
+                await client.send_video(video=file_path, **upload_params)
+            elif media_type == "audio":
+                await client.send_audio(audio=file_path, **upload_params)
 
+            # ✅ Send file to dump channel for logging
+            try:
+                await client.send_document(
+                    chat_id=Config.DUMP_CHANNEL,
+                    document=file_path,
+                    caption=f"👤 User: {message.from_user.mention}\n🆔 ID: `{message.from_user.id}`\n📁 File: `{new_filename}`",
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("🚫 Ban User", callback_data=f"ban_{message.from_user.id}")]
+                    ])
+                )
+            except Exception as dump_err:
+                logger.warning(f"Failed to send to dump channel: {dump_err}")
 
             await msg.delete()
+
         except Exception as e:
             await msg.edit(f"Upload failed: {e}")
             raise
@@ -290,6 +285,7 @@ async def auto_rename_files(client, message):
     except Exception as e:
         logger.error(f"Processing error: {e}")
         await message.reply_text(f"Error: {str(e)}")
+
     finally:
         # Clean up files
         await cleanup_files(download_path, metadata_path, thumb_path)
