@@ -16,23 +16,25 @@ class Database:
         self.codeflixbots = self._client[database_name]
         self.col = self.codeflixbots.user
 
-    def new_user(self, id):
-        return dict(
-            _id=int(id),
-            join_date=datetime.date.today().isoformat(),
-            file_id=None,
-            caption=None,
-            metadata=True,
-            metadata_code="Telegram : @codeflixbots",
-            format_template=None,
-            rename_count=0,  # ✅ Rename counter added
-            ban_status=dict(
-                is_banned=False,
-                ban_duration=0,
-                banned_on=datetime.date.max.isoformat(),
-                ban_reason=''
-            )
+    def new_user(self, id, name=None, mention=None):
+    return dict(
+        _id=int(id),
+        name=name or "User",
+        mention=mention or f"[User](tg://user?id={id})",
+        join_date=datetime.date.today().isoformat(),
+        file_id=None,
+        caption=None,
+        metadata=True,
+        metadata_code="Telegram : @codeflixbots",
+        format_template=None,
+        rename_count=0,  # ✅ Ensure this exists
+        ban_status=dict(
+            is_banned=False,
+            ban_duration=0,
+            banned_on=datetime.date.max.isoformat(),
+            ban_reason=''
         )
+    )
 
     async def add_user(self, b, m):
         u = m.from_user
