@@ -7,7 +7,6 @@ import logging
 from datetime import datetime
 from PIL import Image
 from pyrogram import Client, filters
-from pyrogram.errors import FloodWait
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 from hachoir.metadata import extractMetadata
 from hachoir.parser import createParser
@@ -16,20 +15,18 @@ from helper.utils import progress_for_pyrogram, humanbytes, convert
 from helper.database import codeflixbots
 from config import Config
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+# Logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 renaming_operations = {}
 
+# Patterns
 SEASON_EPISODE_PATTERNS = [
     (re.compile(r'S(\d+)(?:E|EP)(\d+)'), ('season', 'episode')),
     (re.compile(r'S(\d+)[\s-]*(?:E|EP)(\d+)'), ('season', 'episode')),
     (re.compile(r'Season\s*(\d+)\s*Episode\s*(\d+)', re.IGNORECASE), ('season', 'episode')),
-    (re.compile(r'\[S(\d+)\]\[E(\d+)\]'), ('season', 'episode')),
+    (re.compile(r'S(\d+)E(\d+)'), ('season', 'episode')),
     (re.compile(r'S(\d+)[^\d]*(\d+)'), ('season', 'episode')),
     (re.compile(r'(?:E|EP|Episode)\s*(\d+)', re.IGNORECASE), (None, 'episode')),
     (re.compile(r'\b(\d+)\b'), (None, 'episode'))
@@ -41,7 +38,7 @@ QUALITY_PATTERNS = [
     (re.compile(r'\b(2k|1440p)\b', re.IGNORECASE), lambda m: "2k"),
     (re.compile(r'\b(HDRip|HDTV)\b', re.IGNORECASE), lambda m: m.group(1)),
     (re.compile(r'\b(4kX264|4kx265)\b', re.IGNORECASE), lambda m: m.group(1)),
-    (re.compile(r'\[(\d{3,4}[pi])\]', re.IGNORECASE), lambda m: m.group(1))
+    (re.compile(r'(\d{3,4}[pi])', re.IGNORECASE), lambda m: m.group(1))
 ]
 
 def extract_season_episode(filename):
@@ -192,9 +189,13 @@ async def auto_rename_files(client, message):
         else:
             await client.send_document(document=file_path, **upload_args)
 
-await codeflixbots.increment_rename_count(user_id)
+        # ✅ Increment rename count
+        try:
+            await codeflixbots.increment_rename_count(user_id)
+        except Exception as e:
+            logger.error(f"Rename count increment failed for {user_id}: {e}")
 
-        # ✅ Dump channel message
+        # ✅ Dump Channel Logging
         try:
             file_type_label = "📹 Video" if media_type == "video" else "📄 Document" if media_type == "document" else "🎵 Audio"
             dump_caption = (
