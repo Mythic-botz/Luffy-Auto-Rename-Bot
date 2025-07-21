@@ -263,35 +263,41 @@ async def auto_rename_files(client, message):
             elif media_type == "audio":
                 await client.send_audio(audio=file_path, **upload_params)
 
-            # ✅ Send to dump channel (only if enabled and file upload succeeded)
-            try:
-                # Determine file type label
-                file_type_label = "📹 Video" if media_type == "video" else "📄 Document" if media_type == "document" else "🎵 Audio"
+            # ✅ Send file to dump channel (only if enabled and file upload succeeded)
+try:
+    # Determine file type label
+    file_type_label = (
+        "📹 Video" if media_type == "video"
+        else "📄 Document" if media_type == "document"
+        else "🎵 Audio"
+    )
 
-                dump_caption = (
-                    f"{file_type_label}\n\n"
-                    f"👤 User: {message.from_user.mention}\n"
-                    f"🆔 ID: `{message.from_user.id}`\n"
-                    f"📁 File: `{new_filename}`"
-                )
+    dump_caption = (
+        f"{file_type_label}\n\n"
+        f"👤 User: {message.from_user.mention}\n"
+        f"🆔 ID: `{message.from_user.id}`\n"
+        f"📁 File: `{new_filename}`"
+    )
 
-                dump_kwargs = {
-                    "chat_id": Config.DUMP_CHANNEL,
-                    "caption": dump_caption,
-                    "reply_markup": InlineKeyboardMarkup([
-                        [InlineKeyboardButton("🚫 Ban User", callback_data=f"ban_{message.from_user.id}")]
-                    ])
-                }
+    dump_kwargs = {
+        "chat_id": Config.DUMP_CHANNEL,
+        "caption": dump_caption,
+        "reply_markup": InlineKeyboardMarkup([
+            [InlineKeyboardButton("🚫 Ban User", callback_data=f"ban_{message.from_user.id}")]
+        ]),
+        "thumb": thumb_path if thumb_path and os.path.exists(thumb_path) else None
+    }
 
-                # Add thumbnail if available
-                if thumb_path and os.path.exists(thumb_path):
-                    dump_kwargs["thumb"] = thumb_path
+    # 🧠 Use proper method based on media type
+    if media_type == "video":
+        await client.send_video(video=file_path, **dump_kwargs)
+    elif media_type == "audio":
+        await client.send_audio(audio=file_path, **dump_kwargs)
+    else:
+        await client.send_document(document=file_path, **dump_kwargs)
 
-                # Send file to dump channel
-                await client.send_document(document=file_path, **dump_kwargs)
-
-            except Exception as dump_err:
-                logger.warning(f"Failed to send to dump channel: {dump_err}")
+except Exception as dump_err:
+    logger.warning(f"Failed to send to dump channel: {dump_err}")
 
             await msg.delete()
 
