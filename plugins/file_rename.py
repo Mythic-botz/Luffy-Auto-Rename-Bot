@@ -247,7 +247,6 @@ async def auto_rename_files(client, message):
         # Upload file
         try:
             await msg.edit("**Uploading...**")
-
             upload_params = {
                 'chat_id': message.chat.id,
                 'caption': caption,
@@ -263,7 +262,7 @@ async def auto_rename_files(client, message):
             elif media_type == "audio":
                 await client.send_audio(audio=file_path, **upload_params)
 
-            # ✅ Send file to dump channel for logging
+            # ✅ Send to dump channel (only if enabled and file upload succeeded)
             try:
                 await client.send_document(
                     chat_id=Config.DUMP_CHANNEL,
@@ -279,14 +278,14 @@ async def auto_rename_files(client, message):
             await msg.delete()
 
         except Exception as e:
-            await msg.edit(f"Upload failed: {e}")
+            await msg.edit(f"❌ Upload failed: {e}")
             raise
 
     except Exception as e:
-        logger.error(f"Processing error: {e}")
+        logger.error(f"❌ Processing error: {e}")
         await message.reply_text(f"Error: {str(e)}")
 
     finally:
-        # Clean up files
+        # 🔄 Cleanup
         await cleanup_files(download_path, metadata_path, thumb_path)
         renaming_operations.pop(file_id, None)
