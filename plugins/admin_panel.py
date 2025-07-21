@@ -21,7 +21,7 @@ async def restart_bot(b, m):
         await m.reply_text("**Restarting.....**")
 
         # Gracefully stop the bot's event loop
-        b.stop()
+        await b.stop()
         time.sleep(2)  # Adjust the delay duration based on your bot's shutdown time
 
         # Restart the bot process
