@@ -36,8 +36,20 @@ async def leaderboard_handler(client, message):
 # 🧹 Clear Leaderboard (Admins only)
 @Client.on_message(filters.command("clear_leaderboard") & (filters.private | filters.group))
 async def clear_leaderboard_handler(client, message):
-    if message.chat.type == ChatType.PRIVATE or message.from_user.id in Config.ADMINS:
-        await codeflixbots.reset_leaderboard()
-        await message.reply("✅ Leaderboard has been cleared.")
-    else:
-        await message.reply("❌ Only admins can use this command.")
+    user_id = message.from_user.id
+
+    # 🔐 Admin check
+    if user_id not in Config.ADMINS:
+        return await message.reply_text("🚫 You are not authorized to use this command.")
+
+    # ⚠️ Confirmation sent (optional — can be removed if not needed)
+    await message.reply_text("🧹 Clearing leaderboard...")
+
+    try:
+        await codeflixbots.col.update_many(
+            {"rename_count": {"$gt": 0}},
+            {"$set": {"rename_count": 0}}
+        )
+        await message.reply_text("✅ Leaderboard cleared successfully!")
+    except Exception as e:
+        await message.reply_text(f"❌ Failed to clear leaderboard:\n`{e}`")
