@@ -209,6 +209,13 @@ class Database:
             logging.error(f"Error getting top users: {e}")
             return []
 
+    async def reset_leaderboard(self):
+        try:
+            await self.col.update_many({}, {"$set": {"rename_count": 0}})
+            logging.info("Leaderboard cleared successfully.")
+        except Exception as e:
+            logging.error(f"Error clearing leaderboard: {e}")
+
 
 # Instantiate
 codeflixbots = Database(Config.DB_URL, Config.DB_NAME)
