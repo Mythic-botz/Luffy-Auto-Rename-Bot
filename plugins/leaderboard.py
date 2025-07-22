@@ -1,7 +1,10 @@
 import os
 from pyrogram import Client, filters
+from pyrogram.enums import ChatType
+from config import Config
 from helper.database import codeflixbots
 
+# 🔝 Leaderboard command
 @Client.on_message(filters.command("leaderboard") & (filters.private | filters.group))
 async def leaderboard_handler(client, message):
     users = await codeflixbots.get_top_renamers(limit=10)
@@ -29,3 +32,12 @@ async def leaderboard_handler(client, message):
         disable_web_page_preview=True,
         quote=True
     )
+
+# 🧹 Clear Leaderboard (Admins only)
+@Client.on_message(filters.command("clear_leaderboard") & (filters.private | filters.group))
+async def clear_leaderboard_handler(client, message):
+    if message.chat.type == ChatType.PRIVATE or message.from_user.id in Config.ADMINS:
+        await codeflixbots.reset_leaderboard()
+        await message.reply("✅ Leaderboard has been cleared.")
+    else:
+        await message.reply("❌ Only admins can use this command.")
