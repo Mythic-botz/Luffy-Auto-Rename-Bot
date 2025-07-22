@@ -14,11 +14,13 @@ async def leaderboard_handler(client, message):
     medals = ["🥇", "🥈", "🥉"]
 
     for i, user in enumerate(users, 1):
-        name = user.get("name", "User")  # ✅ This fetches "Priyanshu Sharma"
+        user_id = user["_id"]
+        name = user.get("name", "User")
+        mention = f"[{name}](tg://user?id={user_id})"  # ✅ clickable mention
         count = user.get("rename_count", 0)
         total += count
         medal = medals[i - 1] if i <= 3 else f"{i}."
-        leaderboard_text += f"{medal} 👤 {name} — `{count}` files\n"
+        leaderboard_text += f"{medal} 👤 {mention} — `{count}` files\n"
 
     leaderboard_text += f"\n📦 **Total Files Renamed:** `{total}` ✅"
 
