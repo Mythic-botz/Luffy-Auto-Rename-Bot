@@ -17,16 +17,11 @@ async def leaderboard_handler(client, message):
     medal_emojis = ["🥇", "🥈", "🥉"]  # Top 3 users
 
     for i, user in enumerate(users, 1):
-        user_id = user["_id"]
-        name = user.get("mention", f"[User](tg://user?id={user_id})")
+        name = user.get("name", "User")  # ✅ use plain name instead of mention
         count = user.get("rename_count", 0)
         total += count
 
-        if i <= 3:
-            prefix = medal_emojis[i - 1]
-        else:
-            prefix = f"{i}."
-
+        prefix = medal_emojis[i - 1] if i <= 3 else f"{i}."
         leaderboard_text += f"{prefix} 👤 {name} — `{count}` files\n"
 
     leaderboard_text += f"\n📦 **Total Files Renamed:** `{total}` ✅"
