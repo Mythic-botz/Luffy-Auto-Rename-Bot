@@ -17,38 +17,38 @@ class Database:
         self.col = self.codeflixbots.user
 
     def new_user(self, id, name=None, mention=None):
-    return dict(
-        _id=int(id),
-        name=name or "User",
-        mention=mention or f"[User](tg://user?id={id})",
-        join_date=datetime.date.today().isoformat(),
-        file_id=None,
-        caption=None,
-        metadata=True,
-        metadata_code="Telegram : @codeflixbots",
-        format_template=None,
-        rename_count=0,  # ✅ Ensure this exists
-        ban_status=dict(
-            is_banned=False,
-            ban_duration=0,
-            banned_on=datetime.date.max.isoformat(),
-            ban_reason=''
+        return dict(
+            _id=int(id),
+            name=name or "User",
+            mention=mention or f"[User](tg://user?id={id})",
+            join_date=datetime.date.today().isoformat(),
+            file_id=None,
+            caption=None,
+            metadata=True,
+            metadata_code="Telegram : @codeflixbots",
+            format_template=None,
+            rename_count=0,
+            ban_status=dict(
+                is_banned=False,
+                ban_duration=0,
+                banned_on=datetime.date.max.isoformat(),
+                ban_reason=''
+            )
         )
-    )
 
     async def add_user(self, b, m):
-    u = m.from_user
-    if not await self.is_user_exist(u.id):
-        name = u.first_name
-        if u.last_name:
-            name += f" {u.last_name}"
-        mention = u.mention or f"[User](tg://user?id={u.id})"
-        user = self.new_user(u.id, name, mention)
-        try:
-            await self.col.insert_one(user)
-            await send_log(b, u)
-        except Exception as e:
-            logging.error(f"Error adding user {u.id}: {e}")
+        u = m.from_user
+        if not await self.is_user_exist(u.id):
+            name = u.first_name
+            if u.last_name:
+                name += f" {u.last_name}"
+            mention = u.mention or f"[User](tg://user?id={u.id})"
+            user = self.new_user(u.id, name, mention)
+            try:
+                await self.col.insert_one(user)
+                await send_log(b, u)
+            except Exception as e:
+                logging.error(f"Error adding user {u.id}: {e}")
 
     async def is_user_exist(self, id):
         try:
@@ -60,16 +60,14 @@ class Database:
 
     async def total_users_count(self):
         try:
-            count = await self.col.count_documents({})
-            return count
+            return await self.col.count_documents({})
         except Exception as e:
             logging.error(f"Error counting users: {e}")
             return 0
 
     async def get_all_users(self):
         try:
-            all_users = self.col.find({})
-            return all_users
+            return self.col.find({})
         except Exception as e:
             logging.error(f"Error getting all users: {e}")
             return None
@@ -110,9 +108,7 @@ class Database:
 
     async def set_format_template(self, id, format_template):
         try:
-            await self.col.update_one(
-                {"_id": int(id)}, {"$set": {"format_template": format_template}}
-            )
+            await self.col.update_one({"_id": int(id)}, {"$set": {"format_template": format_template}})
         except Exception as e:
             logging.error(f"Error setting format template for user {id}: {e}")
 
@@ -126,9 +122,7 @@ class Database:
 
     async def set_media_preference(self, id, media_type):
         try:
-            await self.col.update_one(
-                {"_id": int(id)}, {"$set": {"media_type": media_type}}
-            )
+            await self.col.update_one({"_id": int(id)}, {"$set": {"media_type": media_type}})
         except Exception as e:
             logging.error(f"Error setting media preference for user {id}: {e}")
 
@@ -189,8 +183,7 @@ class Database:
     async def set_video(self, user_id, video):
         await self.col.update_one({'_id': int(user_id)}, {'$set': {'video': video}})
 
-    # ✅ New leaderboard functions below
-
+    # ✅ Leaderboard Functions
     async def increment_rename_count(self, user_id):
         try:
             await self.col.update_one(
