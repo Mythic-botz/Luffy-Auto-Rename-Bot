@@ -39,7 +39,7 @@ async def clear_leaderboard_handler(client, message):
     user_id = message.from_user.id
 
     # 🔐 Admin check
-    if user_id not in Config.ADMINS:
+    if user_id not in Config.ADMIN:
         return await message.reply_text("🚫 You are not authorized to use this command.")
 
     # ⚠️ Confirmation sent (optional — can be removed if not needed)
