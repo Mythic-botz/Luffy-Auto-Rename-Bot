@@ -21,9 +21,54 @@ logger = logging.getLogger(__name__)
 
 renaming_operations = {}
 
+# Per-user download/upload manager
+class UserDownloadManager:
+    def __init__(self):
+        self.user_queues = {}
+        self.user_semaphores = {}
+        self.max_concurrent = 5
+        logger.info("UserDownloadManager initialized")
+
+    def get_queue(self, user_id):
+        if user_id not in self.user_queues:
+            self.user_queues[user_id] = asyncio.Queue()
+            self.user_semaphores[user_id] = asyncio.Semaphore(self.max_concurrent)
+            logger.info(f"Initialized queue and semaphore for user {user_id}")
+        return self.user_queues[user_id]
+
+    def get_semaphore(self, user_id):
+        if user_id not in self.user_semaphores:
+            self.user_queues[user_id] = asyncio.Queue()
+            self.user_semaphores[user_id] = asyncio.Semaphore(self.max_concurrent)
+            logger.info(f"Initialized semaphore for user {user_id}")
+        return self.user_semaphores[user_id]
+
+    async def add_task(self, user_id, task_data):
+        queue = self.get_queue(user_id)
+        await queue.put(task_data)
+        logger.info(f"Added task for user {user_id}. Queue size: {queue.qsize()}")
+        asyncio.create_task(self.process_queue(user_id))
+
+    async def process_queue(self, user_id):
+        queue = self.get_queue(user_id)
+        semaphore = self.get_semaphore(user_id)
+
+        while not queue.empty():
+            async with semaphore:
+                task_data = await queue.get()
+                try:
+                    await task_data['handler'](task_data['client'], task_data['message'])
+                except Exception as e:
+                    logger.error(f"Task processing error for user {user_id}: {e}")
+                finally:
+                    queue.task_done()
+                    logger.info(f"Task completed for user {user_id}. Queue size: {queue.qsize()}")
+
+# Initialize download manager
+download_manager = UserDownloadManager()
+
 # Patterns
 SEASON_EPISODE_PATTERNS = [
-    # Existing patterns
     (re.compile(r'S(\d+)(?:E|EP)(\d+)'), ('season', 'episode')),
     (re.compile(r'S(\d+)[\s-]*(?:E|EP)(\d+)'), ('season', 'episode')),
     (re.compile(r'Season\s*(\d+)\s*Episode\s*(\d+)', re.IGNORECASE), ('season', 'episode')),
@@ -31,23 +76,19 @@ SEASON_EPISODE_PATTERNS = [
     (re.compile(r'S(\d+)[^\d]*(\d+)'), ('season', 'episode')),
     (re.compile(r'(?:E|EP|Episode)\s*(\d+)', re.IGNORECASE), (None, 'episode')),
     (re.compile(r'\b(\d+)\b'), (None, 'episode')),
-    # New patterns for [S-04] [E-30] and similar formats
     (re.compile(r'\[S-(\d+)\]\s*\[E-(\d+)\]'), ('season', 'episode')),
     (re.compile(r'\[S(\d+)\]\s*\[E(\d+)\]'), ('season', 'episode')),
     (re.compile(r'\[Season\s*(\d+)\]\s*\[Episode\s*(\d+)\]', re.IGNORECASE), ('season', 'episode')),
     (re.compile(r'\bS-(\d+)\b\s*\bE-(\d+)\b'), ('season', 'episode')),
-    # Additional episode patterns for Ep, Ep-, E-, etc.
     (re.compile(r'\b(?:Ep|EP|E|-E|E-)(\d+)\b', re.IGNORECASE), (None, 'episode')),
     (re.compile(r'\bEp-(\d+)\b', re.IGNORECASE), (None, 'episode')),
     (re.compile(r'\bEpisode-(\d+)\b', re.IGNORECASE), (None, 'episode')),
-    # Season only patterns
     (re.compile(r'\[S-(\d+)\]'), ('season', None)),
     (re.compile(r'\[Season\s*(\d+)\]', re.IGNORECASE), ('season', None)),
     (re.compile(r'\bS-(\d+)\b'), ('season', None)),
 ]
 
 QUALITY_PATTERNS = [
-    # Numerical resolutions (highest priority)
     (re.compile(r'\b(\d{3,4}[pi])\b', re.IGNORECASE), lambda m: m.group(1).lower()),
     (re.compile(r'\[(\d{3,4}[pi])\]', re.IGNORECASE), lambda m: m.group(1).lower()),
     (re.compile(r'\b(4k|2160p)\b', re.IGNORECASE), lambda m: "4k"),
@@ -56,16 +97,14 @@ QUALITY_PATTERNS = [
     (re.compile(r'\[(2k|1440p)\]', re.IGNORECASE), lambda m: "2k"),
     (re.compile(r'\b(360p)\b', re.IGNORECASE), lambda m: "360p"),
     (re.compile(r'\[360p\]', re.IGNORECASE), lambda m: "360p"),
-    # Map ambiguous terms to specific resolutions
     (re.compile(r'\bSD\b', re.IGNORECASE), lambda m: "480p"),
     (re.compile(r'\[SD\]', re.IGNORECASE), lambda m: "480p"),
     (re.compile(r'\bHD\b', re.IGNORECASE), lambda m: "720p"),
     (re.compile(r'\[HD\]', re.IGNORECASE), lambda m: "720p"),
     (re.compile(r'\b(UHD|4kX264|4kx265)\b', re.IGNORECASE), lambda m: "4k"),
     (re.compile(r'\[(UHD|4kX264|4kx265)\]', re.IGNORECASE), lambda m: "4k"),
-    # Other formats (lower priority)
-    (re.compile(r'\b(HDRip|HDTV)\b', re.IGNORECASE), lambda m: "720p"),  # Map HDRip/HDTV to 720p
-    (re.compile(r'\b(X264|X265|HEVC)\b', re.IGNORECASE), lambda m: "1080p"),  # Map codecs to 1080p
+    (re.compile(r'\b(HDRip|HDTV)\b', re.IGNORECASE), lambda m: "720p"),
+    (re.compile(r'\b(X264|X265|HEVC)\b', re.IGNORECASE), lambda m: "1080p"),
     (re.compile(r'(\d{3,4}[pi])', re.IGNORECASE), lambda m: m.group(1).lower()),
 ]
 
@@ -109,16 +148,27 @@ async def process_thumbnail(thumb_path):
 async def add_metadata(input_path, output_path, user_id):
     ffmpeg = shutil.which('ffmpeg')
     if not ffmpeg:
-        raise RuntimeError("FFmpeg not found in PATH")
+        logger.error("FFmpeg not found in PATH, copying file without metadata")
+        shutil.copy(input_path, output_path)
+        return
 
     metadata = {
-        'title': await codeflixbots.get_title(user_id),
-        'artist': await codeflixbots.get_artist(user_id),
-        'author': await codeflixbots.get_author(user_id),
-        'video_title': await codeflixbots.get_video(user_id),
-        'audio_title': await codeflixbots.get_audio(user_id),
-        'subtitle': await codeflixbots.get_subtitle(user_id)
+        'title': 'Default Title',
+        'artist': 'Default Artist',
+        'author': 'Default Author',
+        'video_title': 'Default Video',
+        'audio_title': 'Default Audio',
+        'subtitle': 'Default Subtitle'
     }
+    try:
+        metadata['title'] = await codeflixbots.get_title(user_id) or metadata['title']
+        metadata['artist'] = await codeflixbots.get_artist(user_id) or metadata['artist']
+        metadata['author'] = await codeflixbots.get_author(user_id) or metadata['author']
+        metadata['video_title'] = await codeflixbots.get_video(user_id) or metadata['video_title']
+        metadata['audio_title'] = await codeflixbots.get_audio(user_id) or metadata['audio_title']
+        metadata['subtitle'] = await codeflixbots.get_subtitle(user_id) or metadata['subtitle']
+    except Exception as e:
+        logger.error(f"Failed to fetch metadata for user {user_id}: {e}")
 
     cmd = [
         ffmpeg, '-i', input_path,
@@ -135,16 +185,57 @@ async def add_metadata(input_path, output_path, user_id):
     _, stderr = await process.communicate()
 
     if process.returncode != 0:
-        raise RuntimeError(f"FFmpeg error: {stderr.decode()}")
+        logger.error(f"FFmpeg error: {stderr.decode()}, copying file without metadata")
+        shutil.copy(input_path, output_path)
 
 @Client.on_message(filters.private & (filters.document | filters.video | filters.audio))
 async def auto_rename_files(client, message):
-    download_path = metadata_path = thumb_path = None
     user_id = message.from_user.id
     format_template = await codeflixbots.get_format_template(user_id)
 
     if not format_template:
-        return await message.reply_text("Please set a rename format using /autorename")
+        await message.reply_text("Please set a rename format using /autorename")
+        return
+
+    if message.document:
+        file_id = message.document.file_id
+    elif message.video:
+        file_id = message.video.file_id
+    elif message.audio:
+        file_id = message.audio.file_id
+    else:
+        await message.reply_text("Unsupported file type")
+        return
+
+    # Check for NSFW content before queuing
+    file_name = (message.document.file_name if message.document else
+                 message.video.file_name if message.video else
+                 message.audio.file_name if message.audio else "unknown")
+    try:
+        if await check_anti_nsfw(file_name, message):
+            await message.reply_text("NSFW content detected")
+            return
+    except Exception as e:
+        logger.error(f"NSFW check failed: {e}")
+        await message.reply_text("Error checking NSFW content, proceeding with processing")
+
+    # Check for duplicate processing
+    if file_id in renaming_operations:
+        if (datetime.now() - renaming_operations[file_id]).seconds < 10:
+            return
+    renaming_operations[file_id] = datetime.now()
+
+    # Add task to the user's queue
+    await download_manager.add_task(user_id, {
+        'client': client,
+        'message': message,
+        'handler': process_file
+    })
+
+async def process_file(client, message):
+    download_path = metadata_path = thumb_path = None
+    user_id = message.from_user.id
+    format_template = await codeflixbots.get_format_template(user_id)
 
     if message.document:
         file_id, file_name, file_size, media_type = message.document.file_id, message.document.file_name, message.document.file_size, "document"
@@ -153,15 +244,7 @@ async def auto_rename_files(client, message):
     elif message.audio:
         file_id, file_name, file_size, media_type = message.audio.file_id, message.audio.file_name or "audio", message.audio.file_size, "audio"
     else:
-        return await message.reply_text("Unsupported file type")
-
-    if await check_anti_nsfw(file_name, message):
-        return await message.reply_text("NSFW content detected")
-
-    if file_id in renaming_operations:
-        if (datetime.now() - renaming_operations[file_id]).seconds < 10:
-            return
-    renaming_operations[file_id] = datetime.now()
+        return
 
     try:
         season, episode = extract_season_episode(file_name)
@@ -258,3 +341,4 @@ async def auto_rename_files(client, message):
     finally:
         await cleanup_files(download_path, metadata_path, thumb_path)
         renaming_operations.pop(file_id, None)
+
