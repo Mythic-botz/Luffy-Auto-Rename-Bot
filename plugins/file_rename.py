@@ -23,22 +23,46 @@ renaming_operations = {}
 
 # Patterns
 SEASON_EPISODE_PATTERNS = [
+    # Existing patterns
     (re.compile(r'S(\d+)(?:E|EP)(\d+)'), ('season', 'episode')),
     (re.compile(r'S(\d+)[\s-]*(?:E|EP)(\d+)'), ('season', 'episode')),
     (re.compile(r'Season\s*(\d+)\s*Episode\s*(\d+)', re.IGNORECASE), ('season', 'episode')),
     (re.compile(r'S(\d+)E(\d+)'), ('season', 'episode')),
     (re.compile(r'S(\d+)[^\d]*(\d+)'), ('season', 'episode')),
     (re.compile(r'(?:E|EP|Episode)\s*(\d+)', re.IGNORECASE), (None, 'episode')),
-    (re.compile(r'\b(\d+)\b'), (None, 'episode'))
+    (re.compile(r'\b(\d+)\b'), (None, 'episode')),
+    # New patterns for [S-04] [E-30] and similar formats
+    (re.compile(r'\[S-(\d+)\]\s*\[E-(\d+)\]'), ('season', 'episode')),
+    (re.compile(r'\[S(\d+)\]\s*\[E(\d+)\]'), ('season', 'episode')),
+    (re.compile(r'\[Season\s*(\d+)\]\s*\[Episode\s*(\d+)\]', re.IGNORECASE), ('season', 'episode')),
+    (re.compile(r'\bS-(\d+)\b\s*\bE-(\d+)\b'), ('season', 'episode')),
+    # Additional episode patterns for Ep, Ep-, E-, etc.
+    (re.compile(r'\b(?:Ep|EP|E|-E|E-)(\d+)\b', re.IGNORECASE), (None, 'episode')),
+    (re.compile(r'\bEp-(\d+)\b', re.IGNORECASE), (None, 'episode')),
+    (re.compile(r'\bEpisode-(\d+)\b', re.IGNORECASE), (None, 'episode')),
+    # Season only patterns
+    (re.compile(r'\[S-(\d+)\]'), ('season', None)),
+    (re.compile(r'\[Season\s*(\d+)\]', re.IGNORECASE), ('season', None)),
+    (re.compile(r'\bS-(\d+)\b'), ('season', None)),
 ]
 
 QUALITY_PATTERNS = [
+    # Existing patterns
     (re.compile(r'\b(\d{3,4}[pi])\b', re.IGNORECASE), lambda m: m.group(1)),
     (re.compile(r'\b(4k|2160p)\b', re.IGNORECASE), lambda m: "4k"),
     (re.compile(r'\b(2k|1440p)\b', re.IGNORECASE), lambda m: "2k"),
     (re.compile(r'\b(HDRip|HDTV)\b', re.IGNORECASE), lambda m: m.group(1)),
     (re.compile(r'\b(4kX264|4kx265)\b', re.IGNORECASE), lambda m: m.group(1)),
-    (re.compile(r'(\d{3,4}[pi])', re.IGNORECASE), lambda m: m.group(1))
+    (re.compile(r'(\d{3,4}[pi])', re.IGNORECASE), lambda m: m.group(1)),
+    # New patterns for [1080p], [720p], etc.
+    (re.compile(r'\[(\d{3,4}[pi])\]', re.IGNORECASE), lambda m: m.group(1)),
+    (re.compile(r'\[(4k|2160p)\]', re.IGNORECASE), lambda m: "4k"),
+    (re.compile(r'\[(2k|1440p)\]', re.IGNORECASE), lambda m: "2k"),
+    # Additional quality patterns
+    (re.compile(r'\b(UHD|HD|SD)\b', re.IGNORECASE), lambda m: m.group(1)),
+    (re.compile(r'\b(HDR|DV|DolbyVision)\b', re.IGNORECASE), lambda m: m.group(1)),
+    (re.compile(r'\b(X264|X265|HEVC)\b', re.IGNORECASE), lambda m: m.group(1)),
+    (re.compile(r'\b(1080p|720p|480p)\b', re.IGNORECASE), lambda m: m.group(1)),
 ]
 
 def extract_season_episode(filename):
@@ -46,7 +70,7 @@ def extract_season_episode(filename):
         match = pattern.search(filename)
         if match:
             season = match.group(1) if season_group else None
-            episode = match.group(2) if episode_group else match.group(1)
+            episode = match.group(2) if episode_group else match.group(1) if episode_group else None
             return season, episode
     return None, None
 
