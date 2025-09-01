@@ -47,22 +47,26 @@ SEASON_EPISODE_PATTERNS = [
 ]
 
 QUALITY_PATTERNS = [
-    # Existing patterns
-    (re.compile(r'\b(\d{3,4}[pi])\b', re.IGNORECASE), lambda m: m.group(1)),
+    # Numerical resolutions (highest priority)
+    (re.compile(r'\b(\d{3,4}[pi])\b', re.IGNORECASE), lambda m: m.group(1).lower()),
+    (re.compile(r'\[(\d{3,4}[pi])\]', re.IGNORECASE), lambda m: m.group(1).lower()),
     (re.compile(r'\b(4k|2160p)\b', re.IGNORECASE), lambda m: "4k"),
-    (re.compile(r'\b(2k|1440p)\b', re.IGNORECASE), lambda m: "2k"),
-    (re.compile(r'\b(HDRip|HDTV)\b', re.IGNORECASE), lambda m: m.group(1)),
-    (re.compile(r'\b(4kX264|4kx265)\b', re.IGNORECASE), lambda m: m.group(1)),
-    (re.compile(r'(\d{3,4}[pi])', re.IGNORECASE), lambda m: m.group(1)),
-    # New patterns for [1080p], [720p], etc.
-    (re.compile(r'\[(\d{3,4}[pi])\]', re.IGNORECASE), lambda m: m.group(1)),
     (re.compile(r'\[(4k|2160p)\]', re.IGNORECASE), lambda m: "4k"),
+    (re.compile(r'\b(2k|1440p)\b', re.IGNORECASE), lambda m: "2k"),
     (re.compile(r'\[(2k|1440p)\]', re.IGNORECASE), lambda m: "2k"),
-    # Additional quality patterns
-    (re.compile(r'\b(UHD|HD|SD)\b', re.IGNORECASE), lambda m: m.group(1)),
-    (re.compile(r'\b(HDR|DV|DolbyVision)\b', re.IGNORECASE), lambda m: m.group(1)),
-    (re.compile(r'\b(X264|X265|HEVC)\b', re.IGNORECASE), lambda m: m.group(1)),
-    (re.compile(r'\b(1080p|720p|480p)\b', re.IGNORECASE), lambda m: m.group(1)),
+    (re.compile(r'\b(360p)\b', re.IGNORECASE), lambda m: "360p"),
+    (re.compile(r'\[360p\]', re.IGNORECASE), lambda m: "360p"),
+    # Map ambiguous terms to specific resolutions
+    (re.compile(r'\bSD\b', re.IGNORECASE), lambda m: "480p"),
+    (re.compile(r'\[SD\]', re.IGNORECASE), lambda m: "480p"),
+    (re.compile(r'\bHD\b', re.IGNORECASE), lambda m: "720p"),
+    (re.compile(r'\[HD\]', re.IGNORECASE), lambda m: "720p"),
+    (re.compile(r'\b(UHD|4kX264|4kx265)\b', re.IGNORECASE), lambda m: "4k"),
+    (re.compile(r'\[(UHD|4kX264|4kx265)\]', re.IGNORECASE), lambda m: "4k"),
+    # Other formats (lower priority)
+    (re.compile(r'\b(HDRip|HDTV)\b', re.IGNORECASE), lambda m: "720p"),  # Map HDRip/HDTV to 720p
+    (re.compile(r'\b(X264|X265|HEVC)\b', re.IGNORECASE), lambda m: "1080p"),  # Map codecs to 1080p
+    (re.compile(r'(\d{3,4}[pi])', re.IGNORECASE), lambda m: m.group(1).lower()),
 ]
 
 def extract_season_episode(filename):
