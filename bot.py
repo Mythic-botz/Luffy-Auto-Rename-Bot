@@ -1,6 +1,8 @@
-import aiohttp, asyncio, warnings, pytz
+import aiohttp
+import asyncio
+import warnings
+import pytz
 from datetime import datetime, timedelta
-from pytz import timezone
 from pyrogram import Client, __version__
 from pyrogram.raw.all import layer
 from config import Config
@@ -11,18 +13,22 @@ import pyromod
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 import os
 import time
-from plugins import leaderboard  
+from plugins import leaderboard
+import logging
 
+# Set up logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
+# Adjust MIN_CHANNEL_ID for Telegram
 pyrogram.utils.MIN_CHANNEL_ID = -1009147483647
 
-# Setting SUPPORT_CHAT directly here
+# Set SUPPORT_CHAT from environment or default
 SUPPORT_CHAT = int(os.environ.get("SUPPORT_CHAT", "-1002625476694"))
 
 PORT = Config.PORT
 
 class Bot(Client):
-
     def __init__(self):
         super().__init__(
             name="codeflixbots",
@@ -33,49 +39,74 @@ class Bot(Client):
             plugins={"root": "plugins"},
             sleep_threshold=15,
         )
-        # Initialize the bot's start time for uptime calculation
         self.start_time = time.time()
+        logger.info("Bot initialized")
 
-    async def start(self, *args, **kwargs):
-        await super().start(*args, **kwargs)
+    async def start(self):
+        await super().start()
         me = await self.get_me()
         self.mention = me.mention
-        self.username = me.username  
-        self.uptime = Config.BOT_UPTIME     
-        if Config.WEBHOOK:
-            app = web.AppRunner(await web_server())
-            await app.setup()       
-            await web.TCPSite(app, "0.0.0.0", PORT).start()     
-        print(f"{me.first_name} Is Started.....✨️")
+        self.username = me.username
+        self.uptime = time.time() - self.start_time  # Store uptime in seconds
+        logger.info(f"{me.first_name} is started (Username: @{me.username})")
 
-        # Calculate uptime using timedelta
-        uptime_seconds = int(time.time() - self.start_time)
-        uptime_string = str(timedelta(seconds=uptime_seconds))
+        # Send startup message to log and support chats
+        uptime_string = str(timedelta(seconds=int(self.uptime)))
+        curr = datetime.now(pytz.timezone("Asia/Kolkata"))
+        date = curr.strftime('%d %B, %Y')
+        time_str = curr.strftime('%I:%M:%S %p')
 
         for chat_id in [Config.LOG_CHANNEL, SUPPORT_CHAT]:
             try:
-                curr = datetime.now(timezone("Asia/Kolkata"))
-                date = curr.strftime('%d %B, %Y')
-                time_str = curr.strftime('%I:%M:%S %p')
-
-                # Send the message with the photo
                 await self.send_video(
                     chat_id=chat_id,
                     video=Config.START_VID,
                     caption=(
                         "**ʟᴜғғʏ ɪs ʀᴇsᴛᴀʀᴛᴇᴅ ᴀɢᴀɪɴ  !**\n\n"
-                        f"ɪ ᴅɪᴅɴ'ᴛ sʟᴇᴘᴛ sɪɴᴄᴇ: `{uptime_string}`"
+                        f"ɪ ᴅɪᴅɴ'ᴛ sʟᴇᴘᴛ sɪɴᴄᴇ: `{uptime_string}`\n"
+                        f"Date: {date}\nTime: {time_str}"
                     ),
                     reply_markup=InlineKeyboardMarkup([
-    [
-        InlineKeyboardButton("• ᴜᴘᴅᴀᴛᴇꜱ ", url="https://t.me/+rB9N1pKnJ783NWJl"),
-        InlineKeyboardButton("ᴄʜᴇᴄᴋ ʙᴏᴛ •", url="https://t.me/NexusRenameBot")
-    ]
-])
+                        [
+                            InlineKeyboardButton("• ᴜᴘᴅᴀᴛᴇꜱ", url="https://t.me/+rB9N1pKnJ783NWJl"),
+                            InlineKeyboardButton("ᴄʜᴇᴄᴋ ʙᴏᴛ •", url="https://t.me/NexusRenameBot")
+                        ]
+                    ])
                 )
+                logger.info(f"Sent startup message to chat {chat_id}")
             except Exception as e:
-                print(f"Failed to send message in chat {chat_id}: {e}")
+                logger.error(f"Failed to send startup message to chat {chat_id}: {e}")
+
+        # Start web server if webhook is enabled
+        if Config.WEBHOOK:
+            try:
+                app = web.AppRunner(await web_server())
+                await app.setup()
+                await web.TCPSite(app, "0.0.0.0", PORT).start()
+                logger.info(f"Webhook server started on port {PORT}")
+            except Exception as e:
+                logger.error(f"Failed to start webhook server: {e}")
+
+    async def stop(self):
+        await super().stop()
+        logger.info("Bot stopped")
+
+async def main():
+    bot = Bot()
+    try:
+        await bot.start()
+        # Keep the bot running
+        await asyncio.Event().wait()
+    except KeyboardInterrupt:
+        logger.info("Received KeyboardInterrupt, stopping bot")
+        await bot.stop()
+    except Exception as e:
+        logger.error(f"Error running bot: {e}")
+        await bot.stop()
 
 if __name__ == "__main__":
-    bot = Bot()
-    bot.run()
+    try:
+        asyncio.run(main())
+    except Exception as e:
+        logger.error(f"Failed to start bot: {e}")
+        exit(1)
