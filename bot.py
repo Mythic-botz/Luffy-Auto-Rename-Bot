@@ -29,7 +29,7 @@ SUPPORT_CHAT = int(os.environ.get("SUPPORT_CHAT", "-1002625476694"))
 PORT = Config.PORT
 
 class Bot(Client):
-    def __init__(self, loop=None):
+    def __init__(self):
         super().__init__(
             name="codeflixbots",
             api_id=Config.API_ID,
@@ -38,7 +38,6 @@ class Bot(Client):
             workers=200,
             plugins={"root": "plugins"},
             sleep_threshold=15,
-            loop=loop  # Pass the event loop to Pyrogram
         )
         self.start_time = time.time()
         logger.info("Bot initialized")
@@ -83,7 +82,7 @@ class Bot(Client):
             try:
                 app = web.AppRunner(await web_server())
                 await app.setup()
-                await web.TCPSite(app, "0.0.0.0", PORT, loop=self.loop).start()
+                await web.TCPSite(app, "0.0.0.0", PORT).start()
                 logger.info(f"Webhook server started on port {PORT}")
             except Exception as e:
                 logger.error(f"Failed to start webhook server: {e}")
@@ -94,7 +93,7 @@ class Bot(Client):
 
 async def main():
     loop = asyncio.get_event_loop()  # Get the current event loop
-    bot = Bot(loop=loop)  # Pass the loop to the Bot
+    bot = Bot()  # No loop parameter
     try:
         await bot.start()
         await asyncio.Event().wait()  # Keep the bot running
