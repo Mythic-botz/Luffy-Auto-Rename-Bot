@@ -16,17 +16,21 @@ import time
 from plugins import leaderboard
 import logging
 
-# Set up logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+# Setup logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
 logger = logging.getLogger(__name__)
 
 # Adjust MIN_CHANNEL_ID for Telegram
 pyrogram.utils.MIN_CHANNEL_ID = -1009147483647
 
-# Set SUPPORT_CHAT from environment or default
+# Support chat from ENV or default
 SUPPORT_CHAT = int(os.environ.get("SUPPORT_CHAT", "-1002625476694"))
 
 PORT = Config.PORT
+
 
 class Bot(Client):
     def __init__(self):
@@ -40,21 +44,21 @@ class Bot(Client):
             sleep_threshold=15,
         )
         self.start_time = time.time()
-        logger.info("Bot initialized")
+        logger.info("Bot instance created")
 
     async def start(self):
         await super().start()
         me = await self.get_me()
         self.mention = me.mention
         self.username = me.username
-        self.uptime = time.time() - self.start_time
-        logger.info(f"{me.first_name} is started (Username: @{me.username})")
 
-        # Send startup message to log and support chats
-        uptime_string = str(timedelta(seconds=int(self.uptime)))
+        logger.info(f"{me.first_name} started successfully (Username: @{me.username})")
+
+        # Send startup message
+        uptime_string = str(timedelta(seconds=int(time.time() - self.start_time)))
         curr = datetime.now(pytz.timezone("Asia/Kolkata"))
-        date = curr.strftime('%d %B, %Y')
-        time_str = curr.strftime('%I:%M:%S %p')
+        date = curr.strftime("%d %B, %Y")
+        time_str = curr.strftime("%I:%M:%S %p")
 
         for chat_id in [Config.LOG_CHANNEL, SUPPORT_CHAT]:
             try:
@@ -62,9 +66,10 @@ class Bot(Client):
                     chat_id=chat_id,
                     video=Config.START_VID,
                     caption=(
-                        "**ʟᴜғғʏ ɪs ʀᴇsᴛᴀʀᴛᴇᴅ ᴀɢᴀɪɴ  !**\n\n"
-                        f"ɪ ᴅɪᴅɴ'ᴛ sʟᴇᴘᴛ sɪɴᴄᴇ: `{uptime_string}`\n"
-                        f"Date: {date}\nTime: {time_str}"
+                        "**ʟᴜғғʏ ɪs ʀᴇsᴛᴀʀᴛᴇᴅ ᴀɢᴀɪɴ!**\n\n"
+                        f"⏳ Uptime: `{uptime_string}`\n"
+                        f"📅 Date: {date}\n"
+                        f"⏰ Time: {time_str}"
                     ),
                     reply_markup=InlineKeyboardMarkup([
                         [
@@ -73,40 +78,43 @@ class Bot(Client):
                         ]
                     ])
                 )
-                logger.info(f"Sent startup message to chat {chat_id}")
+                logger.info(f"Startup message sent to chat {chat_id}")
             except Exception as e:
-                logger.error(f"Failed to send startup message to chat {chat_id}: {e}")
+                logger.error(f"Failed to send startup message to {chat_id}: {e}")
 
-        # Start web server if webhook is enabled
+        # Start webhook server if enabled
         if Config.WEBHOOK:
             try:
-                app = web.AppRunner(await web_server())
-                await app.setup()
-                await web.TCPSite(app, "0.0.0.0", PORT).start()
+                app = web_server()  # should return web.Application
+                runner = web.AppRunner(app)
+                await runner.setup()
+                site = web.TCPSite(runner, "0.0.0.0", PORT)
+                await site.start()
                 logger.info(f"Webhook server started on port {PORT}")
             except Exception as e:
                 logger.error(f"Failed to start webhook server: {e}")
 
     async def stop(self):
         await super().stop()
-        logger.info("Bot stopped")
+        logger.info("Bot stopped cleanly")
+
 
 async def main():
-    loop = asyncio.get_event_loop()  # Get the current event loop
-    bot = Bot()  # No loop parameter
+    bot = Bot()
     try:
         await bot.start()
-        await asyncio.Event().wait()  # Keep the bot running
+        await asyncio.Event().wait()  # keep running
     except KeyboardInterrupt:
-        logger.info("Received KeyboardInterrupt, stopping bot")
+        logger.info("KeyboardInterrupt received, shutting down...")
         await bot.stop()
     except Exception as e:
-        logger.error(f"Error running bot: {e}")
+        logger.error(f"Unexpected error: {e}")
         await bot.stop()
+
 
 if __name__ == "__main__":
     try:
         asyncio.run(main())
     except Exception as e:
-        logger.error(f"Failed to start bot: {e}")
+        logger.error(f"Fatal error, bot could not start: {e}")
         exit(1)
