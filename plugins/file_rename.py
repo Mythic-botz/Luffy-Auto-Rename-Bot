@@ -4,6 +4,7 @@ import time
 import shutil
 import asyncio
 import logging
+import json
 from datetime import datetime
 from PIL import Image
 from pyrogram import Client, filters
@@ -145,12 +146,45 @@ async def process_thumbnail(thumb_path):
         await cleanup_files(thumb_path)
         return None
 
+async def get_file_duration(file_path):
+    """Get the duration of a media file using ffprobe."""
+    ffprobe = shutil.which('ffprobe')
+    if not ffprobe:
+        logger.error("ffprobe not found in PATH")
+        return None
+    cmd = [
+        ffprobe, '-v', 'error', '-show_entries', 'format=duration',
+        '-of', 'json', file_path
+    ]
+    try:
+        process = await asyncio.create_subprocess_exec(
+            *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+        )
+        stdout, stderr = await process.communicate()
+        if process.returncode != 0:
+            logger.error(f"ffprobe error: {stderr.decode()}")
+            return None
+        data = json.loads(stdout.decode())
+        duration = float(data.get('format', {}).get('duration', 0))
+        return duration
+    except Exception as e:
+        logger.error(f"Failed to get duration for {file_path}: {e}")
+        return None
+
 async def add_metadata(input_path, output_path, user_id):
     ffmpeg = shutil.which('ffmpeg')
     if not ffmpeg:
         logger.error("FFmpeg not found in PATH, copying file without metadata")
         shutil.copy(input_path, output_path)
-        return
+        return False
+
+    # Get input file duration for validation
+    input_duration = await get_file_duration(input_path)
+    if input_duration is None:
+        logger.warning("Could not determine input file duration, proceeding with re-encoding")
+        reencode = True
+    else:
+        reencode = False
 
     metadata = {
         'title': 'Default Title',
@@ -170,6 +204,7 @@ async def add_metadata(input_path, output_path, user_id):
     except Exception as e:
         logger.error(f"Failed to fetch metadata for user {user_id}: {e}")
 
+    # Base FFmpeg command
     cmd = [
         ffmpeg, '-i', input_path,
         '-metadata', f'title={metadata["title"]}',
@@ -178,15 +213,54 @@ async def add_metadata(input_path, output_path, user_id):
         '-metadata:s:v', f'title={metadata["video_title"]}',
         '-metadata:s:a', f'title={metadata["audio_title"]}',
         '-metadata:s:s', f'title={metadata["subtitle"]}',
-        '-map', '0', '-c', 'copy', '-loglevel', 'error', output_path
+        '-map', '0'
     ]
 
-    process = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+    # Decide whether to re-encode audio or copy
+    if reencode:
+        cmd.extend(['-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k'])
+    else:
+        cmd.extend(['-c', 'copy', '-bsf:a', 'null'])
+
+    cmd.extend(['-loglevel', 'error', output_path])
+
+    # Run FFmpeg command
+    process = await asyncio.create_subprocess_exec(
+        *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+    )
     _, stderr = await process.communicate()
 
     if process.returncode != 0:
-        logger.error(f"FFmpeg error: {stderr.decode()}, copying file without metadata")
-        shutil.copy(input_path, output_path)
+        logger.error(f"FFmpeg error: {stderr.decode()}, attempting re-encoding")
+        # Fallback to re-encoding audio if copying fails
+        cmd = [
+            ffmpeg, '-i', input_path,
+            '-metadata', f'title={metadata["title"]}',
+            '-metadata', f'artist={metadata["artist"]}',
+            '-metadata', f'author={metadata["author"]}',
+            '-metadata:s:v', f'title={metadata["video_title"]}',
+            '-metadata:s:a', f'title={metadata["audio_title"]}',
+            '-metadata:s:s', f'title={metadata["subtitle"]}',
+            '-map', '0', '-c:v', 'copy', '-c:a', 'aac', '-b:a', '256k',
+            '-loglevel', 'error', output_path
+        ]
+        process = await asyncio.create_subprocess_exec(
+            *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+        )
+        _, stderr = await process.communicate()
+
+        if process.returncode != 0:
+            logger.error(f"FFmpeg re-encoding failed: {stderr.decode()}, copying file without metadata")
+            shutil.copy(input_path, output_path)
+            return False
+
+    # Validate output duration
+    output_duration = await get_file_duration(output_path)
+    if input_duration and output_duration and abs(input_duration - output_duration) > 5:
+        logger.warning(f"Duration mismatch: input {input_duration}s, output {output_duration}s")
+        return False
+
+    return True
 
 @Client.on_message(filters.private & (filters.document | filters.video | filters.audio))
 async def auto_rename_files(client, message):
@@ -270,8 +344,12 @@ async def process_file(client, message):
         )
 
         await msg.edit("**Processing metadata...**")
-        await add_metadata(file_path, metadata_path, user_id)
+        success = await add_metadata(file_path, metadata_path, user_id)
         file_path = metadata_path
+
+        if not success:
+            await msg.edit("**Metadata processing failed, using original file...**")
+            file_path = download_path
 
         await msg.edit("**Preparing upload...**")
         caption = await codeflixbots.get_caption(message.chat.id) or f"**{new_filename}**"
@@ -300,13 +378,13 @@ async def process_file(client, message):
         else:
             await client.send_document(document=file_path, **upload_args)
 
-        # ✅ Increment rename count
+        # Increment rename count
         try:
             await codeflixbots.increment_rename_count(user_id)
         except Exception as e:
             logger.error(f"Rename count increment failed for {user_id}: {e}")
 
-        # ✅ Dump Channel Logging
+        # Dump Channel Logging
         try:
             file_type_label = "📹 Video" if media_type == "video" else "📄 Document" if media_type == "document" else "🎵 Audio"
             dump_caption = (
@@ -341,4 +419,3 @@ async def process_file(client, message):
     finally:
         await cleanup_files(download_path, metadata_path, thumb_path)
         renaming_operations.pop(file_id, None)
-
