@@ -27,6 +27,7 @@ class UserDownloadManager:
     def __init__(self):
         self.user_queues = {}
         self.user_semaphores = {}
+        self.user_queue_messages = {}  # Store queue notification message IDs
         self.max_concurrent = 5
         logger.info("UserDownloadManager initialized")
 
@@ -34,6 +35,7 @@ class UserDownloadManager:
         if user_id not in self.user_queues:
             self.user_queues[user_id] = asyncio.Queue()
             self.user_semaphores[user_id] = asyncio.Semaphore(self.max_concurrent)
+            self.user_queue_messages[user_id] = None
             logger.info(f"Initialized queue and semaphore for user {user_id}")
         return self.user_queues[user_id]
 
@@ -41,16 +43,38 @@ class UserDownloadManager:
         if user_id not in self.user_semaphores:
             self.user_queues[user_id] = asyncio.Queue()
             self.user_semaphores[user_id] = asyncio.Semaphore(self.max_concurrent)
+            self.user_queue_messages[user_id] = None
             logger.info(f"Initialized semaphore for user {user_id}")
         return self.user_semaphores[user_id]
 
-    async def add_task(self, user_id, task_data):
+    async def add_task(self, user_id, task_data, client, message):
         queue = self.get_queue(user_id)
         await queue.put(task_data)
         logger.info(f"Added task for user {user_id}. Queue size: {queue.qsize()}")
-        asyncio.create_task(self.process_queue(user_id))
 
-    async def process_queue(self, user_id):
+        # Check if queue size exceeds max_concurrent
+        if queue.qsize() > self.max_concurrent:
+            try:
+                # Send or update queue notification
+                queue_message = f"Added to Queue ({queue.qsize()} files pending). Use /queue to check status."
+                if self.user_queue_messages.get(user_id):
+                    await client.edit_message_text(
+                        chat_id=message.chat.id,
+                        message_id=self.user_queue_messages[user_id],
+                        text=queue_message
+                    )
+                else:
+                    msg = await client.send_message(
+                        chat_id=message.chat.id,
+                        text=queue_message
+                    )
+                    self.user_queue_messages[user_id] = msg.id
+            except Exception as e:
+                logger.error(f"Failed to send/update queue message for user {user_id}: {e}")
+
+        asyncio.create_task(self.process_queue(user_id, client))
+
+    async def process_queue(self, user_id, client):
         queue = self.get_queue(user_id)
         semaphore = self.get_semaphore(user_id)
 
@@ -58,6 +82,24 @@ class UserDownloadManager:
             async with semaphore:
                 task_data = await queue.get()
                 try:
+                    # Update or delete queue message when task starts
+                    if self.user_queue_messages.get(user_id):
+                        try:
+                            if queue.qsize() > 0:
+                                await client.edit_message_text(
+                                    chat_id=task_data['message'].chat.id,
+                                    message_id=self.user_queue_messages[user_id],
+                                    text=f"Processing task. {queue.qsize()} files remaining in queue."
+                                )
+                            else:
+                                await client.delete_messages(
+                                    chat_id=task_data['message'].chat.id,
+                                    message_ids=self.user_queue_messages[user_id]
+                                )
+                                self.user_queue_messages[user_id] = None
+                        except Exception as e:
+                            logger.error(f"Failed to update/delete queue message for user {user_id}: {e}")
+
                     await task_data['handler'](task_data['client'], task_data['message'])
                 except Exception as e:
                     logger.error(f"Task processing error for user {user_id}: {e}")
@@ -65,10 +107,24 @@ class UserDownloadManager:
                     queue.task_done()
                     logger.info(f"Task completed for user {user_id}. Queue size: {queue.qsize()}")
 
+    def get_queue_info(self, user_id):
+        queue = self.get_queue(user_id)
+        tasks = []
+        # Create a temporary queue to preserve the original
+        temp_queue = asyncio.Queue()
+        while not queue.empty():
+            task = queue.get_nowait()
+            tasks.append(task)
+            temp_queue.put_nowait(task)
+        # Restore the queue
+        while not temp_queue.empty():
+            queue.put_nowait(temp_queue.get_nowait())
+        return tasks
+
 # Initialize download manager
 download_manager = UserDownloadManager()
 
-# Patterns
+# Patterns (unchanged)
 SEASON_EPISODE_PATTERNS = [
     (re.compile(r'S(\d+)(?:E|EP)(\d+)'), ('season', 'episode')),
     (re.compile(r'S(\d+)[\s-]*(?:E|EP)(\d+)'), ('season', 'episode')),
@@ -171,20 +227,58 @@ async def get_file_duration(file_path):
         logger.error(f"Failed to get duration for {file_path}: {e}")
         return None
 
-async def add_metadata(input_path, output_path, user_id):
+async def get_video_resolution(file_path):
+    """Get the video resolution using ffprobe."""
+    ffprobe = shutil.which('ffprobe')
+    if not ffprobe:
+        logger.error("ffprobe not found in PATH")
+        return None
+    cmd = [
+        ffprobe, '-v', 'error', '-show_entries', 'stream=width,height',
+        '-of', 'json', file_path
+    ]
+    try:
+        process = await asyncio.create_subprocess_exec(
+            *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+        )
+        stdout, stderr = await process.communicate()
+        if process.returncode != 0:
+            logger.error(f"ffprobe error for resolution: {stderr.decode()}")
+            return None
+        data = json.loads(stdout.decode())
+        for stream in data.get('streams', []):
+            if stream.get('width') and stream.get('height'):
+                return stream['width'], stream['height']
+        return None
+    except Exception as e:
+        logger.error(f"Failed to get resolution for {file_path}: {e}")
+        return None
+
+async def add_metadata(input_path, output_path, user_id, media_type):
     ffmpeg = shutil.which('ffmpeg')
     if not ffmpeg:
         logger.error("FFmpeg not found in PATH, copying file without metadata")
         shutil.copy(input_path, output_path)
         return False
 
-    # Get input file duration for validation
+    # Get input file duration and resolution for validation
     input_duration = await get_file_duration(input_path)
+    input_resolution = await get_video_resolution(input_path) if media_type == "video" else None
     if input_duration is None:
         logger.warning("Could not determine input file duration, proceeding with re-encoding")
-        reencode = True
+        reencode_audio = True
     else:
-        reencode = False
+        reencode_audio = False
+
+    # Check user preference for video quality enhancement
+    enhance_quality = await codeflixbots.get_enhance_quality(user_id) or False
+    target_resolution = None
+    if enhance_quality and media_type == "video" and input_resolution:
+        width, height = input_resolution
+        if height <= 480:  # Upscale SD to 720p
+            target_resolution = "1280:720"
+        elif height <= 720:  # Upscale 720p to 1080p
+            target_resolution = "1920:1080"
 
     metadata = {
         'title': 'Default Title',
@@ -216,11 +310,21 @@ async def add_metadata(input_path, output_path, user_id):
         '-map', '0'
     ]
 
-    # Decide whether to re-encode audio or copy
-    if reencode:
-        cmd.extend(['-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k'])
+    # Decide whether to re-encode video and/or audio
+    if media_type == "video" and enhance_quality:
+        # Re-encode video for quality improvement
+        cmd.extend(['-c:v', 'libx264', '-crf', '18', '-preset', 'medium', '-b:v', '3000k'])
+        if target_resolution:
+            cmd.extend(['-vf', f'scale={target_resolution}:force_original_aspect_ratio=decrease,pad={target_resolution}:(ow-iw)/2:(oh-ih)/2'])
     else:
-        cmd.extend(['-c', 'copy', '-bsf:a', 'null'])
+        # Copy video stream if no quality enhancement
+        cmd.extend(['-c:v', 'copy'])
+
+    # Handle audio
+    if reencode_audio or enhance_quality:
+        cmd.extend(['-c:a', 'aac', '-b:a', '192k'])
+    else:
+        cmd.extend(['-c:a', 'copy', '-bsf:a', 'null'])
 
     cmd.extend(['-loglevel', 'error', output_path])
 
@@ -231,8 +335,8 @@ async def add_metadata(input_path, output_path, user_id):
     _, stderr = await process.communicate()
 
     if process.returncode != 0:
-        logger.error(f"FFmpeg error: {stderr.decode()}, attempting re-encoding")
-        # Fallback to re-encoding audio if copying fails
+        logger.error(f"FFmpeg error: {stderr.decode()}, attempting fallback")
+        # Fallback to re-encoding both video and audio
         cmd = [
             ffmpeg, '-i', input_path,
             '-metadata', f'title={metadata["title"]}',
@@ -241,9 +345,12 @@ async def add_metadata(input_path, output_path, user_id):
             '-metadata:s:v', f'title={metadata["video_title"]}',
             '-metadata:s:a', f'title={metadata["audio_title"]}',
             '-metadata:s:s', f'title={metadata["subtitle"]}',
-            '-map', '0', '-c:v', 'copy', '-c:a', 'aac', '-b:a', '256k',
-            '-loglevel', 'error', output_path
+            '-map', '0', '-c:v', 'libx264', '-crf', '18', '-preset', 'medium', '-b:v', '3000k',
+            '-c:a', 'aac', '-b:a', '192k', '-loglevel', 'error', output_path
         ]
+        if target_resolution:
+            cmd.extend(['-vf', f'scale={target_resolution}:force_original_aspect_ratio=decrease,pad={target_resolution}:(ow-iw)/2:(oh-ih)/2'])
+
         process = await asyncio.create_subprocess_exec(
             *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
         )
@@ -303,8 +410,26 @@ async def auto_rename_files(client, message):
     await download_manager.add_task(user_id, {
         'client': client,
         'message': message,
-        'handler': process_file
-    })
+        'handler': process_file,
+        'filename': file_name  # Store filename for queue info
+    }, client, message)
+
+@Client.on_message(filters.command("queue") & filters.private)
+async def queue_command(client, message):
+    user_id = message.from_user.id
+    tasks = download_manager.get_queue_info(user_id)
+    queue_size = len(tasks)
+
+    if queue_size == 0:
+        await message.reply_text("Your queue is empty.")
+        return
+
+    response = f"**Queue Status**\n\nPending files: {queue_size}\n\n"
+    for i, task in enumerate(tasks, 1):
+        filename = task.get('filename', 'Unknown')
+        response += f"{i}. {filename}\n"
+
+    await message.reply_text(response)
 
 async def process_file(client, message):
     download_path = metadata_path = thumb_path = None
@@ -331,7 +456,7 @@ async def process_file(client, message):
         }.items():
             format_template = format_template.replace(ph, val)
 
-        ext = os.path.splitext(file_name)[1] or ('.mp4' if media_type == 'video' else '.mp3')
+        ext = os.path.splitext(file_name)[1] or ('.mp4' if media_type == "video" else '.mp3')
         new_filename = f"{format_template}{ext}"
         download_path, metadata_path = f"downloads/{new_filename}", f"metadata/{new_filename}"
         os.makedirs(os.path.dirname(download_path), exist_ok=True)
@@ -343,12 +468,12 @@ async def process_file(client, message):
             progress=progress_for_pyrogram, progress_args=("Downloading...", msg, time.time())
         )
 
-        await msg.edit("**Processing metadata...**")
-        success = await add_metadata(file_path, metadata_path, user_id)
+        await msg.edit("**Processing metadata and enhancing quality...**")
+        success = await add_metadata(file_path, metadata_path, user_id, media_type)
         file_path = metadata_path
 
         if not success:
-            await msg.edit("**Metadata processing failed, using original file...**")
+            await msg.edit("**Metadata or quality processing failed, using original file...**")
             file_path = download_path
 
         await msg.edit("**Preparing upload...**")
