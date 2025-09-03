@@ -29,7 +29,7 @@ SUPPORT_CHAT = int(os.environ.get("SUPPORT_CHAT", "-1002625476694"))
 PORT = Config.PORT
 
 class Bot(Client):
-    def __init__(self):
+    def __init__(self, loop=None):
         super().__init__(
             name="codeflixbots",
             api_id=Config.API_ID,
@@ -38,6 +38,7 @@ class Bot(Client):
             workers=200,
             plugins={"root": "plugins"},
             sleep_threshold=15,
+            loop=loop  # Pass the event loop to Pyrogram
         )
         self.start_time = time.time()
         logger.info("Bot initialized")
@@ -47,7 +48,7 @@ class Bot(Client):
         me = await self.get_me()
         self.mention = me.mention
         self.username = me.username
-        self.uptime = time.time() - self.start_time  # Store uptime in seconds
+        self.uptime = time.time() - self.start_time
         logger.info(f"{me.first_name} is started (Username: @{me.username})")
 
         # Send startup message to log and support chats
@@ -82,7 +83,7 @@ class Bot(Client):
             try:
                 app = web.AppRunner(await web_server())
                 await app.setup()
-                await web.TCPSite(app, "0.0.0.0", PORT).start()
+                await web.TCPSite(app, "0.0.0.0", PORT, loop=self.loop).start()
                 logger.info(f"Webhook server started on port {PORT}")
             except Exception as e:
                 logger.error(f"Failed to start webhook server: {e}")
@@ -92,11 +93,11 @@ class Bot(Client):
         logger.info("Bot stopped")
 
 async def main():
-    bot = Bot()
+    loop = asyncio.get_event_loop()  # Get the current event loop
+    bot = Bot(loop=loop)  # Pass the loop to the Bot
     try:
         await bot.start()
-        # Keep the bot running
-        await asyncio.Event().wait()
+        await asyncio.Event().wait()  # Keep the bot running
     except KeyboardInterrupt:
         logger.info("Received KeyboardInterrupt, stopping bot")
         await bot.stop()
