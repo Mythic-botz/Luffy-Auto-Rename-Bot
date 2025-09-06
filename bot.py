@@ -1,36 +1,19 @@
-import aiohttp
-import asyncio
-import warnings
-import pytz
+import aiohttp, asyncio, warnings, pytz
 from datetime import datetime, timedelta
+from pytz import timezone
 from pyrogram import Client, __version__
 from pyrogram.raw.all import layer
 from config import Config
 from aiohttp import web
 from route import web_server
 import pyrogram.utils
-import pyromod
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 import os
 import time
-from plugins import leaderboard
-import logging
 
-# Setup logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
-logger = logging.getLogger(__name__)
+pyrogram.utils.MIN_CHANNEL_ID = -1002258136705
 
-# Adjust MIN_CHANNEL_ID for Telegram
-pyrogram.utils.MIN_CHANNEL_ID = -1009147483647
-
-# Support chat from ENV or default
-SUPPORT_CHAT = int(os.environ.get("SUPPORT_CHAT", "-1002625476694"))
-
-PORT = Config.PORT
-
+SUPPORT_CHAT = os.environ.get("SUPPORT_CHAT", "MythicBot_Support")
 
 class Bot(Client):
     def __init__(self):
@@ -44,77 +27,70 @@ class Bot(Client):
             sleep_threshold=15,
         )
         self.start_time = time.time()
-        logger.info("Bot instance created")
+
+    async def ping_service(self):
+        while True:
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.get("https://afrb-b6a8.onrender.com") as response:
+                        if response.status == 200:
+                            print("Ping successful")
+                        else:
+                            print("Ping failed with status:", response.status)
+            except Exception as e:
+                print("Error while pinging:", e)
+
+            await asyncio.sleep(300)
 
     async def start(self):
         await super().start()
         me = await self.get_me()
         self.mention = me.mention
-        self.username = me.username
+        self.username = me.username  
+        self.uptime = Config.BOT_UPTIME  
 
-        logger.info(f"{me.first_name} started successfully (Username: @{me.username})")
+        if Config.WEBHOOK:
+            app = web.AppRunner(await web_server())
+            await app.setup()       
+            await web.TCPSite(app, "0.0.0.0", 8080).start()     
 
-        # Send startup message
-        uptime_string = str(timedelta(seconds=int(time.time() - self.start_time)))
-        curr = datetime.now(pytz.timezone("Asia/Kolkata"))
-        date = curr.strftime("%d %B, %Y")
-        time_str = curr.strftime("%I:%M:%S %p")
+        print(f"{me.first_name} Is Started.....✨️")
+        print("✅ Bot started.")
+
+        # Send log message
+        try:
+            await self.send_message(Config.LOG_CHANNEL, "✅ Bot is online!")
+        except Exception as e:
+            print(f"Failed to send bot online message: {e}")
+
+        uptime_seconds = int(time.time() - self.start_time)
+        uptime_string = str(timedelta(seconds=uptime_seconds))
 
         for chat_id in [Config.LOG_CHANNEL, SUPPORT_CHAT]:
             try:
-                await self.send_video(
+                curr = datetime.now(timezone("Asia/Kolkata"))
+                await self.send_photo(
                     chat_id=chat_id,
-                    video=Config.START_VID,
-                    caption=(
-                        "**ʟᴜғғʏ ɪs ʀᴇsᴛᴀʀᴛᴇᴅ ᴀɢᴀɪɴ!**\n\n"
-                        f"⏳ Uptime: `{uptime_string}`\n"
-                        f"📅 Date: {date}\n"
-                        f"⏰ Time: {time_str}"
+                    photo=Config.START_PIC,
+                    caption=( 
+                        "**ᴀɴʏᴀ ɪs ʀᴇsᴛᴀʀᴛᴇᴅ ᴀɢᴀɪɴ  !**\n\n"
+                        f"ɪ ᴅɪᴅɴ'ᴛ sʟᴇᴘᴛ sɪɴᴄᴇ: `{uptime_string}`"
                     ),
-                    reply_markup=InlineKeyboardMarkup([
-                        [
-                            InlineKeyboardButton("• ᴜᴘᴅᴀᴛᴇꜱ", url="https://t.me/+rB9N1pKnJ783NWJl"),
-                            InlineKeyboardButton("ᴄʜᴇᴄᴋ ʙᴏᴛ •", url="https://t.me/NexusRenameBot")
-                        ]
-                    ])
+                    reply_markup=InlineKeyboardMarkup(
+                        [[
+                            InlineKeyboardButton("ᴜᴘᴅᴀᴛᴇs", url="https://t.me/MythicBots")
+                        ]]
+                    )
                 )
-                logger.info(f"Startup message sent to chat {chat_id}")
             except Exception as e:
-                logger.error(f"Failed to send startup message to {chat_id}: {e}")
+                print(f"Failed to send message in chat {chat_id}: {e}")
 
-        # Start webhook server if enabled
-        if Config.WEBHOOK:
-            try:
-                app = web_server()  # should return web.Application
-                runner = web.AppRunner(app)
-                await runner.setup()
-                site = web.TCPSite(runner, "0.0.0.0", PORT)
-                await site.start()
-                logger.info(f"Webhook server started on port {PORT}")
-            except Exception as e:
-                logger.error(f"Failed to start webhook server: {e}")
+        asyncio.create_task(self.ping_service())
 
-    async def stop(self):
-        await super().stop()
-        logger.info("Bot stopped cleanly")
-
-
-async def main():
-    bot = Bot()
-    try:
-        await bot.start()
-        await asyncio.Event().wait()  # keep running
-    except KeyboardInterrupt:
-        logger.info("KeyboardInterrupt received, shutting down...")
-        await bot.stop()
-    except Exception as e:
-        logger.error(f"Unexpected error: {e}")
-        await bot.stop()
+    async def stop(self, *args):
+        print("🛑 Bot stopped.")
+        return await super().stop()
 
 
 if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except Exception as e:
-        logger.error(f"Fatal error, bot could not start: {e}")
-        exit(1)
+    Bot().run()
