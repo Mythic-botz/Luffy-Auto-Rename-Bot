@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 pyrogram.utils.MIN_CHANNEL_ID = -1002258136705
 
-SUPPORT_CHAT = os.environ.get("SUPPORT_CHAT", "MythicBot_Support")
+SUPPORT_CHAT = os.environ.get("SUPPORT_CHAT", "")
 
 class Bot(Client):
     def __init__(self):
