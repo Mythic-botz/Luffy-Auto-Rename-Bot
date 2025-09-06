@@ -1,4 +1,7 @@
-import aiohttp, asyncio, warnings, pytz
+import aiohttp
+import asyncio
+import warnings
+import pytz
 from datetime import datetime, timedelta
 from pytz import timezone
 from pyrogram import Client, __version__
@@ -10,6 +13,11 @@ import pyrogram.utils
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 import os
 import time
+import logging
+
+# Logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 pyrogram.utils.MIN_CHANNEL_ID = -1002258136705
 
@@ -34,63 +42,85 @@ class Bot(Client):
                 async with aiohttp.ClientSession() as session:
                     async with session.get("https://afrb-b6a8.onrender.com") as response:
                         if response.status == 200:
-                            print("Ping successful")
+                            logger.info("Ping successful")
                         else:
-                            print("Ping failed with status:", response.status)
+                            logger.warning(f"Ping failed with status: {response.status}")
             except Exception as e:
-                print("Error while pinging:", e)
-
+                logger.error(f"Error while pinging: {e}")
             await asyncio.sleep(300)
 
     async def start(self):
-        await super().start()
-        me = await self.get_me()
-        self.mention = me.mention
-        self.username = me.username  
-        self.uptime = Config.BOT_UPTIME  
-
-        if Config.WEBHOOK:
-            app = web.AppRunner(await web_server())
-            await app.setup()       
-            await web.TCPSite(app, "0.0.0.0", 8080).start()     
-
-        print(f"{me.first_name} Is Started.....✨️")
-        print("✅ Bot started.")
-
-        # Send log message
         try:
-            await self.send_message(Config.LOG_CHANNEL, "✅ Bot is online!")
-        except Exception as e:
-            print(f"Failed to send bot online message: {e}")
+            await super().start()
+            me = await self.get_me()
+            self.mention = me.mention
+            self.username = me.username
+            self.uptime = Config.BOT_UPTIME
 
-        uptime_seconds = int(time.time() - self.start_time)
-        uptime_string = str(timedelta(seconds=uptime_seconds))
+            if Config.WEBHOOK:
+                try:
+                    app = web.AppRunner(await web_server())
+                    await app.setup()
+                    await web.TCPSite(app, "0.0.0.0", 8080).start()
+                    logger.info("Webhook server started on port 8080")
+                except Exception as e:
+                    logger.error(f"Failed to start webhook server: {e}")
 
-        for chat_id in [Config.LOG_CHANNEL, SUPPORT_CHAT]:
+            logger.info(f"{me.first_name} Is Started.....✨️")
+            logger.info("✅ Bot started.")
+
+            # Send log message
             try:
-                curr = datetime.now(timezone("Asia/Kolkata"))
-                await self.send_photo(
-                    chat_id=chat_id,
-                    photo=Config.START_PIC,
-                    caption=( 
-                        "**ᴀɴʏᴀ ɪs ʀᴇsᴛᴀʀᴛᴇᴅ ᴀɢᴀɪɴ  !**\n\n"
-                        f"ɪ ᴅɪᴅɴ'ᴛ sʟᴇᴘᴛ sɪɴᴄᴇ: `{uptime_string}`"
-                    ),
-                    reply_markup=InlineKeyboardMarkup(
-                        [[
-                            InlineKeyboardButton("ᴜᴘᴅᴀᴛᴇs", url="https://t.me/MythicBots")
-                        ]]
-                    )
-                )
+                await self.send_message(Config.LOG_CHANNEL, "✅ Bot is online!")
             except Exception as e:
-                print(f"Failed to send message in chat {chat_id}: {e}")
+                logger.error(f"Failed to send bot online message to LOG_CHANNEL: {e}")
 
-        asyncio.create_task(self.ping_service())
+            uptime_seconds = int(time.time() - self.start_time)
+            uptime_string = str(timedelta(seconds=uptime_seconds))
+
+            for chat_id in [Config.LOG_CHANNEL, SUPPORT_CHAT]:
+                try:
+                    curr = datetime.now(timezone("Asia/Kolkata"))
+                    await self.send_photo(
+                        chat_id=chat_id,
+                        photo=Config.START_PIC,
+                        caption=(
+                            "**ᴀɴʏᴀ ɪs ʀᴇsᴛᴀʀᴛᴇᴅ ᴀɢᴀɪɴ  !**\n\n"
+                            f"ɪ ᴅɪᴅɴ'ᴛ sʟᴇᴘᴛ sɪɴᴄᴇ: `{uptime_string}`"
+                        ),
+                        reply_markup=InlineKeyboardMarkup(
+                            [[InlineKeyboardButton("ᴜᴘᴅᴀᴛᴇs", url="https://t.me/MythicBots")]]
+                        )
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to send message in chat {chat_id}: {e}")
+
+            asyncio.create_task(self.ping_service())
+        except Exception as e:
+            logger.error(f"Failed to start bot: {e}")
+            raise
 
     async def stop(self, *args):
-        print("🛑 Bot stopped.")
+        logger.info("🛑 Bot stopped.")
         return await super().stop()
 
+# Basic command to confirm bot responsiveness
+@Client.on_message(filters.command("test") & filters.private)
+async def start_command(client, message):
+    try:
+        await message.reply_text(
+            f"Hello {message.from_user.mention}! I'm {client.me.first_name}, ready to rename your files. Send a video, audio, or document to start, or use /autorename to set a rename format.",
+            reply_markup=InlineKeyboardMarkup(
+                [[InlineKeyboardButton("Support", url=f"https://t.me/{SUPPORT_CHAT}")]]
+            )
+        )
+    except Exception as e:
+        logger.error(f"Error in start command: {e}")
+        await message.reply_text("An error occurred. Please try again later.")
 
 if __name__ == "__main__":
-    Bot().run()
+    try:
+        Bot().run()
+    except Exception as e:
+        logger.error(f"Error starting bot: {e}")
+        raise
