@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 pyrogram.utils.MIN_CHANNEL_ID = -1002258136705
 
-SUPPORT_CHAT = os.environ.get("SUPPORT_CHAT", "")
+SUPPORT_CHAT = os.environ.get("SUPPORT_CHAT", "MythicBot_Support")
 
 class Bot(Client):
     def __init__(self):
@@ -107,6 +107,7 @@ class Bot(Client):
 
 if __name__ == "__main__":
     try:
+        logger.info("Starting bot...")
         Bot().run()
     except Exception as e:
         logger.error(f"Error starting bot: {e}")
