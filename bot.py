@@ -104,19 +104,6 @@ class Bot(Client):
         logger.info("🛑 Bot stopped.")
         return await super().stop()
 
-# Basic command to confirm bot responsiveness
-@Client.on_message(filters.command("start") & filters.private)
-async def start_command(client, message):
-    try:
-        await message.reply_text(
-            f"Hello {message.from_user.mention}! I'm {client.me.first_name}, ready to rename your files. Send a video, audio, or document to start, or use /autorename to set a rename format.",
-            reply_markup=InlineKeyboardMarkup(
-                [[InlineKeyboardButton("Support", url=f"https://t.me/{SUPPORT_CHAT}")]]
-            )
-        )
-    except Exception as e:
-        logger.error(f"Error in start command: {e}")
-        await message.reply_text("An error occurred. Please try again later.")
 
 if __name__ == "__main__":
     try:
