@@ -21,53 +21,7 @@ logger = logging.getLogger(__name__)
 
 renaming_operations = {}
 
-# Per-user download/upload manager
-class UserDownloadManager:
-    def __init__(self):
-        self.user_queues = {}
-        self.user_semaphores = {}
-        self.max_concurrent = 5
-        logger.info("UserDownloadManager initialized")
-
-    def get_queue(self, user_id):
-        if user_id not in self.user_queues:
-            self.user_queues[user_id] = asyncio.Queue()  # Removed loop parameter
-            self.user_semaphores[user_id] = asyncio.Semaphore(self.max_concurrent)
-            logger.info(f"Initialized queue and semaphore for user {user_id}")
-        return self.user_queues[user_id]
-
-    def get_semaphore(self, user_id):
-        if user_id not in self.user_semaphores:
-            self.user_queues[user_id] = asyncio.Queue()  # Removed loop parameter
-            self.user_semaphores[user_id] = asyncio.Semaphore(self.max_concurrent)
-            logger.info(f"Initialized semaphore for user {user_id}")
-        return self.user_semaphores[user_id]
-
-    async def add_task(self, user_id, task_data):
-        queue = self.get_queue(user_id)
-        await queue.put(task_data)
-        logger.info(f"Added task for user {user_id}. Queue size: {queue.qsize()}")
-        asyncio.create_task(self.process_queue(user_id))
-
-    async def process_queue(self, user_id):
-        queue = self.get_queue(user_id)
-        semaphore = self.get_semaphore(user_id)
-
-        while not queue.empty():
-            async with semaphore:
-                task_data = await queue.get()
-                try:
-                    await task_data['handler'](task_data['client'], task_data['message'])
-                except Exception as e:
-                    logger.error(f"Task processing error for user {user_id}: {e}")
-                finally:
-                    queue.task_done()
-                    logger.info(f"Task completed for user {user_id}. Queue size: {queue.qsize()}")
-
-# Initialize download manager
-download_manager = UserDownloadManager()
-
-# Patterns
+# ----------------------------- Regex Patterns -----------------------------
 SEASON_EPISODE_PATTERNS = [
     (re.compile(r'S(\d+)(?:E|EP)(\d+)'), ('season', 'episode')),
     (re.compile(r'S(\d+)[\s-]*(?:E|EP)(\d+)'), ('season', 'episode')),
@@ -108,6 +62,7 @@ QUALITY_PATTERNS = [
     (re.compile(r'(\d{3,4}[pi])', re.IGNORECASE), lambda m: m.group(1).lower()),
 ]
 
+# ----------------------------- Helpers -----------------------------
 def extract_season_episode(filename):
     for pattern, (season_group, episode_group) in SEASON_EPISODE_PATTERNS:
         match = pattern.search(filename)
@@ -145,110 +100,52 @@ async def process_thumbnail(thumb_path):
         await cleanup_files(thumb_path)
         return None
 
+# ----------------------------- Metadata Embed -----------------------------
 async def add_metadata(input_path, output_path, user_id):
     ffmpeg = shutil.which('ffmpeg')
     if not ffmpeg:
-        logger.error("FFmpeg not found in PATH, copying file without metadata")
-        shutil.copy(input_path, output_path)
-        return
+        raise RuntimeError("FFmpeg not found in PATH")
 
     metadata = {
-        'title': 'Default Title',
-        'artist': 'Default Artist',
-        'author': 'Default Author',
-        'video_title': 'Default Video',
-        'audio_title': 'Default Audio',
-        'subtitle': 'Default Subtitle'
+        'title': await codeflixbots.get_title(user_id),
+        'artist': await codeflixbots.get_artist(user_id),
+        'author': await codeflixbots.get_author(user_id),
+        'video_title': await codeflixbots.get_video(user_id),
+        'audio_title': await codeflixbots.get_audio(user_id),
+        'subtitle': await codeflixbots.get_subtitle(user_id)
     }
-    try:
-        metadata['title'] = await codeflixbots.get_title(user_id) or metadata['title']
-        metadata['artist'] = await codeflixbots.get_artist(user_id) or metadata['artist']
-        metadata['author'] = await codeflixbots.get_author(user_id) or metadata['author']
-        metadata['video_title'] = await codeflixbots.get_video(user_id) or metadata['video_title']
-        metadata['audio_title'] = await codeflixbots.get_audio(user_id) or metadata['audio_title']
-        metadata['subtitle'] = await codeflixbots.get_subtitle(user_id) or metadata['subtitle']
-    except Exception as e:
-        logger.error(f"Failed to fetch metadata for user {user_id}: {e}")
 
     cmd = [
         ffmpeg, '-i', input_path,
+        '-map', '0', '-c', 'copy',
         '-metadata', f'title={metadata["title"]}',
         '-metadata', f'artist={metadata["artist"]}',
         '-metadata', f'author={metadata["author"]}',
         '-metadata:s:v', f'title={metadata["video_title"]}',
         '-metadata:s:a', f'title={metadata["audio_title"]}',
         '-metadata:s:s', f'title={metadata["subtitle"]}',
-        '-map', '0', '-c', 'copy', '-loglevel', 'error', output_path
+        '-fflags', '+genpts',
+        '-reset_timestamps', '1',
+        '-avoid_negative_ts', 'make_zero',
+        '-loglevel', 'error', output_path
     ]
 
-    process = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+    process = await asyncio.create_subprocess_exec(
+        *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+    )
     _, stderr = await process.communicate()
-
     if process.returncode != 0:
-        logger.error(f"FFmpeg error: {stderr.decode()}, copying file without metadata")
-        shutil.copy(input_path, output_path)
+        raise RuntimeError(f"FFmpeg error: {stderr.decode()}")
 
+# ----------------------------- Handler -----------------------------
 @Client.on_message(filters.private & (filters.document | filters.video | filters.audio))
 async def auto_rename_files(client, message):
-    user_id = message.from_user.id
-    try:
-        format_template = await codeflixbots.get_format_template(user_id)
-        if not format_template:
-            await message.reply_text("Please set a rename format using /autorename")
-            return
-    except Exception as e:
-        logger.error(f"Error fetching format template for user {user_id}: {e}")
-        await message.reply_text("Error accessing database. Please try again later.")
-        return
-
-    if message.document:
-        file_id = message.document.file_id
-    elif message.video:
-        file_id = message.video.file_id
-    elif message.audio:
-        file_id = message.audio.file_id
-    else:
-        await message.reply_text("Unsupported file type")
-        return
-
-    # Check for NSFW content before queuing
-    file_name = (message.document.file_name if message.document else
-                 message.video.file_name if message.video else
-                 message.audio.file_name if message.audio else "unknown")
-    try:
-        if await check_anti_nsfw(file_name, message):
-            await message.reply_text("NSFW content detected")
-            return
-    except Exception as e:
-        logger.error(f"NSFW check failed for user {user_id}: {e}")
-        await message.reply_text("Error checking NSFW content, proceeding with processing")
-
-    # Check for duplicate processing
-    if file_id in renaming_operations:
-        if (datetime.now() - renaming_operations[file_id]).seconds < 10:
-            return
-    renaming_operations[file_id] = datetime.now()
-
-    # Add task to the user's queue
-    try:
-        await download_manager.add_task(user_id, {
-            'client': client,
-            'message': message,
-            'handler': process_file
-        })
-    except Exception as e:
-        logger.error(f"Error adding task for user {user_id}: {e}")
-        await message.reply_text("Error queuing file for processing. Please try again.")
-
-async def process_file(client, message):
     download_path = metadata_path = thumb_path = None
     user_id = message.from_user.id
-    try:
-        format_template = await codeflixbots.get_format_template(user_id)
-    except Exception as e:
-        logger.error(f"Error fetching format template in process_file for user {user_id}: {e}")
-        await message.reply_text("Error accessing database. Please try again later.")
-        return
+    format_template = await codeflixbots.get_format_template(user_id)
+
+    if not format_template:
+        return await message.reply_text("Please set a rename format using /autorename")
 
     if message.document:
         file_id, file_name, file_size, media_type = message.document.file_id, message.document.file_name, message.document.file_size, "document"
@@ -257,20 +154,38 @@ async def process_file(client, message):
     elif message.audio:
         file_id, file_name, file_size, media_type = message.audio.file_id, message.audio.file_name or "audio", message.audio.file_size, "audio"
     else:
-        return
+        return await message.reply_text("Unsupported file type")
+
+    if await check_anti_nsfw(file_name, message):
+        return await message.reply_text("NSFW content detected")
+
+    if file_id in renaming_operations:
+        if (datetime.now() - renaming_operations[file_id]).seconds < 10:
+            return
+    renaming_operations[file_id] = datetime.now()
 
     try:
         season, episode = extract_season_episode(file_name)
         quality = extract_quality(file_name)
 
         for ph, val in {
-            '{season}': season or 'XX', '{episode}': episode or 'XX',
-            '{quality}': quality, 'Season': season or 'XX',
-            'Episode': episode or 'XX', 'QUALITY': quality
+            '{season}': season or 'XX',
+            '{episode}': episode or 'XX',
+            '{quality}': quality,
+            'Season': season or 'XX',
+            'Episode': episode or 'XX',
+            'QUALITY': quality
         }.items():
             format_template = format_template.replace(ph, val)
 
-        ext = os.path.splitext(file_name)[1] or ('.mp4' if media_type == 'video' else '.mp3')
+        # ✅ Force MKV for videos
+        if media_type == "video":
+            ext = ".mkv"
+        elif media_type == "audio":
+            ext = ".mp3"
+        else:
+            ext = os.path.splitext(file_name)[1] or ".bin"
+
         new_filename = f"{format_template}{ext}"
         download_path, metadata_path = f"downloads/{new_filename}", f"metadata/{new_filename}"
         os.makedirs(os.path.dirname(download_path), exist_ok=True)
@@ -287,30 +202,13 @@ async def process_file(client, message):
         file_path = metadata_path
 
         await msg.edit("**Preparing upload...**")
-        try:
-            caption = await codeflixbots.get_caption(message.chat.id) or f"**{new_filename}**"
-        except Exception as e:
-            logger.error(f"Error fetching caption for chat {message.chat.id}: {e}")
-            caption = f"**{new_filename}**"
-
-        try:
-            thumb = await codeflixbots.get_thumbnail(message.chat.id)
-        except Exception as e:
-            logger.error(f"Error fetching thumbnail for chat {message.chat.id}: {e}")
-            thumb = None
+        caption = await codeflixbots.get_caption(message.chat.id) or f"**{new_filename}**"
+        thumb = await codeflixbots.get_thumbnail(message.chat.id)
 
         if thumb:
-            try:
-                thumb_path = await client.download_media(thumb)
-            except Exception as e:
-                logger.error(f"Error downloading thumbnail: {e}")
-                thumb_path = None
+            thumb_path = await client.download_media(thumb)
         elif media_type == "video" and message.video.thumbs:
-            try:
-                thumb_path = await client.download_media(message.video.thumbs[0].file_id)
-            except Exception as e:
-                logger.error(f"Error downloading video thumbnail: {e}")
-                thumb_path = None
+            thumb_path = await client.download_media(message.video.thumbs[0].file_id)
 
         thumb_path = await process_thumbnail(thumb_path)
 
@@ -323,25 +221,20 @@ async def process_file(client, message):
             'progress_args': ("Uploading...", msg, time.time())
         }
 
-        try:
-            if media_type == "video":
-                await client.send_video(video=file_path, **upload_args)
-            elif media_type == "audio":
-                await client.send_audio(audio=file_path, **upload_args)
-            else:
-                await client.send_document(document=file_path, **upload_args)
-        except Exception as e:
-            logger.error(f"Error uploading file for user {user_id}: {e}")
-            await msg.edit("Error uploading file. Please try again.")
-            return
+        if media_type == "video":
+            await client.send_video(video=file_path, **upload_args)
+        elif media_type == "audio":
+            await client.send_audio(audio=file_path, **upload_args)
+        else:
+            await client.send_document(document=file_path, **upload_args)
 
-        # Increment rename count
+        # ✅ Increment rename count
         try:
             await codeflixbots.increment_rename_count(user_id)
         except Exception as e:
             logger.error(f"Rename count increment failed for {user_id}: {e}")
 
-        # Dump Channel Logging
+        # ✅ Dump Channel Logging
         try:
             file_type_label = "📹 Video" if media_type == "video" else "📄 Document" if media_type == "document" else "🎵 Audio"
             dump_caption = (
@@ -363,13 +256,14 @@ async def process_file(client, message):
                 await client.send_audio(audio=file_path, **dump_args)
             else:
                 await client.send_document(document=file_path, **dump_args)
+
         except Exception as dump_err:
             logger.warning(f"Failed to send to dump channel: {dump_err}")
 
         await msg.delete()
 
     except Exception as e:
-        logger.error(f"❌ Processing error for user {user_id}: {e}")
+        logger.error(f"❌ Processing error: {e}")
         await message.reply_text(f"Error: {e}")
 
     finally:
