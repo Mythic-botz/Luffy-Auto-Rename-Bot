@@ -106,28 +106,32 @@ async def add_metadata(input_path, output_path, user_id):
     if not ffmpeg:
         raise RuntimeError("FFmpeg not found in PATH")
 
+    # Fetch metadata from your database
     metadata = {
-        'title': await codeflixbots.get_title(user_id),
-        'artist': await codeflixbots.get_artist(user_id),
-        'author': await codeflixbots.get_author(user_id),
-        'video_title': await codeflixbots.get_video(user_id),
-        'audio_title': await codeflixbots.get_audio(user_id),
-        'subtitle': await codeflixbots.get_subtitle(user_id)
+        'title': await codeflixbots.get_title(user_id) or "",
+        'artist': await codeflixbots.get_artist(user_id) or "",
+        'author': await codeflixbots.get_author(user_id) or "",
+        'video_title': await codeflixbots.get_video(user_id) or "",
+        'audio_title': await codeflixbots.get_audio(user_id) or "",
+        'subtitle': await codeflixbots.get_subtitle(user_id) or ""
     }
 
+    # FFmpeg command
     cmd = [
         ffmpeg, '-i', input_path,
-        '-map', '0', '-c', 'copy',
+        '-map', '0', '-c', 'copy',  # Copy all streams
         '-metadata', f'title={metadata["title"]}',
         '-metadata', f'artist={metadata["artist"]}',
         '-metadata', f'author={metadata["author"]}',
         '-metadata:s:v', f'title={metadata["video_title"]}',
         '-metadata:s:a', f'title={metadata["audio_title"]}',
         '-metadata:s:s', f'title={metadata["subtitle"]}',
-        '-fflags', '+genpts',
-        '-reset_timestamps', '1',
-        '-avoid_negative_ts', 'make_zero',
-        '-loglevel', 'error', output_path
+        '-fflags', '+genpts',                # Regenerate PTS timestamps
+        '-reset_timestamps', '1',            # Reset timestamps to start from zero
+        '-avoid_negative_ts', 'make_zero',   # Avoid negative timestamps
+        '-movflags', '+faststart',           # Optimize for playback start (MP4)
+        '-loglevel', 'error',                # Quiet output
+        output_path
     ]
 
     process = await asyncio.create_subprocess_exec(
