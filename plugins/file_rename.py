@@ -21,9 +21,8 @@ logger = logging.getLogger(__name__)
 
 renaming_operations = {}
 
-# Patterns
+# ----------------------------- Regex Patterns -----------------------------
 SEASON_EPISODE_PATTERNS = [
-    # Existing patterns
     (re.compile(r'S(\d+)(?:E|EP)(\d+)'), ('season', 'episode')),
     (re.compile(r'S(\d+)[\s-]*(?:E|EP)(\d+)'), ('season', 'episode')),
     (re.compile(r'Season\s*(\d+)\s*Episode\s*(\d+)', re.IGNORECASE), ('season', 'episode')),
@@ -31,23 +30,19 @@ SEASON_EPISODE_PATTERNS = [
     (re.compile(r'S(\d+)[^\d]*(\d+)'), ('season', 'episode')),
     (re.compile(r'(?:E|EP|Episode)\s*(\d+)', re.IGNORECASE), (None, 'episode')),
     (re.compile(r'\b(\d+)\b'), (None, 'episode')),
-    # New patterns for [S-04] [E-30] and similar formats
     (re.compile(r'\[S-(\d+)\]\s*\[E-(\d+)\]'), ('season', 'episode')),
     (re.compile(r'\[S(\d+)\]\s*\[E(\d+)\]'), ('season', 'episode')),
     (re.compile(r'\[Season\s*(\d+)\]\s*\[Episode\s*(\d+)\]', re.IGNORECASE), ('season', 'episode')),
     (re.compile(r'\bS-(\d+)\b\s*\bE-(\d+)\b'), ('season', 'episode')),
-    # Additional episode patterns for Ep, Ep-, E-, etc.
     (re.compile(r'\b(?:Ep|EP|E|-E|E-)(\d+)\b', re.IGNORECASE), (None, 'episode')),
     (re.compile(r'\bEp-(\d+)\b', re.IGNORECASE), (None, 'episode')),
     (re.compile(r'\bEpisode-(\d+)\b', re.IGNORECASE), (None, 'episode')),
-    # Season only patterns
     (re.compile(r'\[S-(\d+)\]'), ('season', None)),
     (re.compile(r'\[Season\s*(\d+)\]', re.IGNORECASE), ('season', None)),
     (re.compile(r'\bS-(\d+)\b'), ('season', None)),
 ]
 
 QUALITY_PATTERNS = [
-    # Numerical resolutions (highest priority)
     (re.compile(r'\b(\d{3,4}[pi])\b', re.IGNORECASE), lambda m: m.group(1).lower()),
     (re.compile(r'\[(\d{3,4}[pi])\]', re.IGNORECASE), lambda m: m.group(1).lower()),
     (re.compile(r'\b(4k|2160p)\b', re.IGNORECASE), lambda m: "4k"),
@@ -56,19 +51,18 @@ QUALITY_PATTERNS = [
     (re.compile(r'\[(2k|1440p)\]', re.IGNORECASE), lambda m: "2k"),
     (re.compile(r'\b(360p)\b', re.IGNORECASE), lambda m: "360p"),
     (re.compile(r'\[360p\]', re.IGNORECASE), lambda m: "360p"),
-    # Map ambiguous terms to specific resolutions
     (re.compile(r'\bSD\b', re.IGNORECASE), lambda m: "480p"),
     (re.compile(r'\[SD\]', re.IGNORECASE), lambda m: "480p"),
     (re.compile(r'\bHD\b', re.IGNORECASE), lambda m: "720p"),
     (re.compile(r'\[HD\]', re.IGNORECASE), lambda m: "720p"),
     (re.compile(r'\b(UHD|4kX264|4kx265)\b', re.IGNORECASE), lambda m: "4k"),
     (re.compile(r'\[(UHD|4kX264|4kx265)\]', re.IGNORECASE), lambda m: "4k"),
-    # Other formats (lower priority)
-    (re.compile(r'\b(HDRip|HDTV)\b', re.IGNORECASE), lambda m: "720p"),  # Map HDRip/HDTV to 720p
-    (re.compile(r'\b(X264|X265|HEVC)\b', re.IGNORECASE), lambda m: "1080p"),  # Map codecs to 1080p
+    (re.compile(r'\b(HDRip|HDTV)\b', re.IGNORECASE), lambda m: "720p"),
+    (re.compile(r'\b(X264|X265|HEVC)\b', re.IGNORECASE), lambda m: "1080p"),
     (re.compile(r'(\d{3,4}[pi])', re.IGNORECASE), lambda m: m.group(1).lower()),
 ]
 
+# ----------------------------- Helpers -----------------------------
 def extract_season_episode(filename):
     for pattern, (season_group, episode_group) in SEASON_EPISODE_PATTERNS:
         match = pattern.search(filename)
@@ -106,6 +100,7 @@ async def process_thumbnail(thumb_path):
         await cleanup_files(thumb_path)
         return None
 
+# ----------------------------- Metadata Embed -----------------------------
 async def add_metadata(input_path, output_path, user_id):
     ffmpeg = shutil.which('ffmpeg')
     if not ffmpeg:
@@ -122,21 +117,27 @@ async def add_metadata(input_path, output_path, user_id):
 
     cmd = [
         ffmpeg, '-i', input_path,
+        '-map', '0', '-c', 'copy',
         '-metadata', f'title={metadata["title"]}',
         '-metadata', f'artist={metadata["artist"]}',
         '-metadata', f'author={metadata["author"]}',
         '-metadata:s:v', f'title={metadata["video_title"]}',
         '-metadata:s:a', f'title={metadata["audio_title"]}',
         '-metadata:s:s', f'title={metadata["subtitle"]}',
-        '-map', '0', '-c', 'copy', '-loglevel', 'error', output_path
+        '-fflags', '+genpts',
+        '-reset_timestamps', '1',
+        '-avoid_negative_ts', 'make_zero',
+        '-loglevel', 'error', output_path
     ]
 
-    process = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+    process = await asyncio.create_subprocess_exec(
+        *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+    )
     _, stderr = await process.communicate()
-
     if process.returncode != 0:
         raise RuntimeError(f"FFmpeg error: {stderr.decode()}")
 
+# ----------------------------- Handler -----------------------------
 @Client.on_message(filters.private & (filters.document | filters.video | filters.audio))
 async def auto_rename_files(client, message):
     download_path = metadata_path = thumb_path = None
@@ -168,13 +169,23 @@ async def auto_rename_files(client, message):
         quality = extract_quality(file_name)
 
         for ph, val in {
-            '{season}': season or 'XX', '{episode}': episode or 'XX',
-            '{quality}': quality, 'Season': season or 'XX',
-            'Episode': episode or 'XX', 'QUALITY': quality
+            '{season}': season or 'XX',
+            '{episode}': episode or 'XX',
+            '{quality}': quality,
+            'Season': season or 'XX',
+            'Episode': episode or 'XX',
+            'QUALITY': quality
         }.items():
             format_template = format_template.replace(ph, val)
 
-        ext = os.path.splitext(file_name)[1] or ('.mp4' if media_type == 'video' else '.mp3')
+        # ✅ Force MKV for videos
+        if media_type == "video":
+            ext = ".mkv"
+        elif media_type == "audio":
+            ext = ".mp3"
+        else:
+            ext = os.path.splitext(file_name)[1] or ".bin"
+
         new_filename = f"{format_template}{ext}"
         download_path, metadata_path = f"downloads/{new_filename}", f"metadata/{new_filename}"
         os.makedirs(os.path.dirname(download_path), exist_ok=True)
