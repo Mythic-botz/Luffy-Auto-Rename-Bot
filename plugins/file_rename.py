@@ -119,7 +119,7 @@ async def add_metadata(input_path, output_path, user_id):
     # FFmpeg command
     cmd = [
         ffmpeg, '-i', input_path,
-        -map', '0',
+        '-map', '0',
         '-c:v', 'copy',
         '-c:a', 'copy',
         '-fflags', '+genpts',
