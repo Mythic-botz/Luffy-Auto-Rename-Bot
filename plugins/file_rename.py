@@ -119,18 +119,20 @@ async def add_metadata(input_path, output_path, user_id):
     # FFmpeg command
     cmd = [
         ffmpeg, '-i', input_path,
-        '-map', '0', '-c', 'copy',  # Copy all streams
+        -map', '0',
+        '-c:v', 'copy',
+        '-c:a', 'copy',
+        '-fflags', '+genpts',
+        '-reset_timestamps', '1',
+        '-movflags', '+faststart',
+        '-avoid_negative_ts', 'make_zero',
         '-metadata', f'title={metadata["title"]}',
         '-metadata', f'artist={metadata["artist"]}',
         '-metadata', f'author={metadata["author"]}',
         '-metadata:s:v', f'title={metadata["video_title"]}',
         '-metadata:s:a', f'title={metadata["audio_title"]}',
         '-metadata:s:s', f'title={metadata["subtitle"]}',
-        '-fflags', '+genpts',                # Regenerate PTS timestamps
-        '-reset_timestamps', '1',            # Reset timestamps to start from zero
-        '-avoid_negative_ts', 'make_zero',   # Avoid negative timestamps
-        '-movflags', '+faststart',           # Optimize for playback start (MP4)
-        '-loglevel', 'error',                # Quiet output
+        '-loglevel', 'error',
         output_path
     ]
 
